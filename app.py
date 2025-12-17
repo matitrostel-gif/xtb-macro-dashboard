@@ -31,21 +31,26 @@ FRED_API_KEY = "a913b86d145620f86b690a7e4fe4538e"
 
 # --- 3. CONFIGURACIÓN MAESTRA ---
 INDICATOR_CONFIG = {
-    "Tasa Desempleo": {"fred_id": "UNRATE", "source": "U.S. BLS", "type": "macro"},
-    "Tasa Participación Laboral": {"fred_id": "CIVPART", "source": "U.S. BLS", "type": "macro"},
-    "Nóminas NFP": {"fred_id": "PAYEMS", "source": "U.S. BLS", "type": "macro"},
-    "Initial Jobless Claims": {"fred_id": "ICSA", "source": "U.S. ETA", "type": "macro"},
-    "Inflación PCE": {"fred_id": "PCEPI", "source": "U.S. BEA", "type": "macro"},
-    "IPC Core": {"fred_id": "CPIAUCSL", "source": "U.S. BLS", "type": "macro"},
-    "Liquidez FED": {"fred_id": "WALCL", "source": "Federal Reserve", "type": "macro"},
-    "Oferta Monetaria M2": {"fred_id": "M2SL", "source": "Federal Reserve", "type": "macro"},
-    "Producción Industrial": {"fred_id": "INDPRO", "source": "Federal Reserve", "type": "macro"},
+    # Macro - Laboral
+    "Tasa Desempleo": {"fred_id": "UNRATE", "source": "U.S. BLS", "type": "macro", "is_percent": True},
+    "Tasa Participación Laboral": {"fred_id": "CIVPART", "source": "U.S. BLS", "type": "macro", "is_percent": True},
+    "Nóminas NFP": {"fred_id": "PAYEMS", "source": "U.S. BLS", "type": "macro", "is_percent": False},
+    "Initial Jobless Claims": {"fred_id": "ICSA", "source": "U.S. ETA", "type": "macro", "is_percent": False},
+    
+    # Macro - Inflación
+    "Inflación PCE": {"fred_id": "PCEPI", "source": "U.S. BEA", "type": "macro", "is_percent": False},
+    "IPC Core": {"fred_id": "CPIAUCSL", "source": "U.S. BLS", "type": "macro", "is_percent": False},
+    
+    # Macro - Dinero/Actividad
+    "Liquidez FED": {"fred_id": "WALCL", "source": "Federal Reserve", "type": "macro", "is_percent": False},
+    "Oferta Monetaria M2": {"fred_id": "M2SL", "source": "Federal Reserve", "type": "macro", "is_percent": False},
+    "Producción Industrial": {"fred_id": "INDPRO", "source": "Federal Reserve", "type": "macro", "is_percent": False},
     
     # Datos de Mercado
-    "Bono US 10Y": {"fred_id": "DGS10", "source": "Board of Governors", "type": "market"},
-    "Bono US 2Y": {"fred_id": "DGS2", "source": "Board of Governors", "type": "market"},
-    "Tasa FED": {"fred_id": "FEDFUNDS", "source": "Board of Governors", "type": "market"},
-    "Volatilidad VIX": {"fred_id": "VIXCLS", "source": "CBOE", "type": "market"},
+    "Bono US 10Y": {"fred_id": "DGS10", "source": "Board of Governors", "type": "market", "is_percent": True},
+    "Bono US 2Y": {"fred_id": "DGS2", "source": "Board of Governors", "type": "market", "is_percent": True},
+    "Tasa FED": {"fred_id": "FEDFUNDS", "source": "Board of Governors", "type": "market", "is_percent": True},
+    "Volatilidad VIX": {"fred_id": "VIXCLS", "source": "CBOE", "type": "market", "is_percent": False},
 }
 
 # --- 4. UTILIDADES ---
@@ -67,6 +72,14 @@ def get_month_name(month_num):
     meses = {1: 'Ene', 2: 'Feb', 3: 'Mar', 4: 'Abr', 5: 'May', 6: 'Jun', 
              7: 'Jul', 8: 'Ago', 9: 'Sep', 10: 'Oct', 11: 'Nov', 12: 'Dic'}
     return meses.get(month_num, '')
+
+def get_format_settings(indicator_name):
+    config = INDICATOR_CONFIG.get(indicator_name, {})
+    if "Inflación PCE (YoY%)" in indicator_name: return "%", ".2f"
+    if "Curva Tipos" in indicator_name: return "%", ".2f"
+    is_pct = config.get("is_percent", False)
+    if is_pct: return "%", ".2f"
+    else: return "", ",.0f"
 
 # --- 5. MOTOR DE DATOS ---
 @st.cache_data(ttl=3600) 
@@ -93,12 +106,12 @@ def get_all_macro_data_long_history():
         if 'Inflación PCE' in df_calc.columns:
             name_inf = 'Inflación PCE (YoY%)'
             df_master[name_inf] = df_calc['Inflación PCE'].pct_change(12) * 100
-            INDICATOR_CONFIG[name_inf] = {"source": "U.S. BEA", "type": "macro"}
+            INDICATOR_CONFIG[name_inf] = {"source": "U.S. BEA", "type": "macro", "is_percent": True}
             
         if 'Bono US 10Y' in df_calc.columns and 'Bono US 2Y' in df_calc.columns:
             name_curve = 'Curva Tipos (10Y-2Y)'
             df_master[name_curve] = df_calc['Bono US 10Y'] - df_calc['Bono US 2Y']
-            INDICATOR_CONFIG[name_curve] = {"source": "Board of Governors", "type": "market"}
+            INDICATOR_CONFIG[name_curve] = {"source": "Board of Governors", "type": "market", "is_percent": True}
             
     return df_master
 
@@ -107,6 +120,8 @@ def create_pro_chart(df, col1, col2=None, invert_y2=False, logo_data=""):
     COLOR_Y1 = "#002b49" 
     COLOR_Y2 = "#5ca6e5" 
     has_secondary = col2 is not None and col2 != "Ninguno"
+    
+    suffix1, fmt1 = get_format_settings(col1)
     
     valid_s1 = df[col1].dropna()
     start_date_plot = valid_s1.first_valid_index()
@@ -125,8 +140,9 @@ def create_pro_chart(df, col1, col2=None, invert_y2=False, logo_data=""):
         if not s1.empty:
             last_v1 = s1.iloc[-1]
             fig.add_trace(go.Scatter(x=s1.index, y=s1, name=col1, line=dict(color=COLOR_Y1, width=2.5), mode='lines'), secondary_y=False)
+            txt_val = f"{last_v1:,.2f}{suffix1}" if suffix1 == "%" else f"{last_v1:,.0f}"
             fig.add_annotation(
-                x=s1.index[-1], y=last_v1, text=f" {last_v1:.2f}%",
+                x=s1.index[-1], y=last_v1, text=f" {txt_val}",
                 xref="x", yref="y1", xanchor="left", showarrow=False,
                 font=dict(color="white", size=11, weight="bold"),
                 bgcolor=COLOR_Y1, borderpad=4, opacity=0.9
@@ -134,13 +150,15 @@ def create_pro_chart(df, col1, col2=None, invert_y2=False, logo_data=""):
     except: pass
 
     if has_secondary:
+        suffix2, fmt2 = get_format_settings(col2)
         try:
             s2 = df[col2].dropna()
             if not s2.empty:
                 last_v2 = s2.iloc[-1]
                 fig.add_trace(go.Scatter(x=s2.index, y=s2, name=col2, line=dict(color=COLOR_Y2, width=2, dash='dash'), mode='lines'), secondary_y=True)
+                txt_val2 = f"{last_v2:,.2f}{suffix2}" if suffix2 == "%" else f"{last_v2:,.0f}"
                 fig.add_annotation(
-                    x=s2.index[-1], y=last_v2, text=f" {last_v2:.2f}%",
+                    x=s2.index[-1], y=last_v2, text=f" {txt_val2}",
                     xref="x", yref="y2", xanchor="left", showarrow=False,
                     font=dict(color="white", size=11, weight="bold"),
                     bgcolor=COLOR_Y2, borderpad=4, opacity=0.9
@@ -152,28 +170,32 @@ def create_pro_chart(df, col1, col2=None, invert_y2=False, logo_data=""):
     if has_secondary: title_text += f" vs <b>{col2}</b>"
 
     fig.update_layout(
-        title=dict(text=title_text, x=0.5, y=0.95, xanchor='center', font=dict(family="Arial", size=20, color="black")),
+        title=dict(text=title_text, x=0.5, y=0.98, xanchor='center', font=dict(family="Arial", size=20, color="black")),
         plot_bgcolor="white", paper_bgcolor="white", height=650,
         margin=dict(t=120, r=80, l=80, b=100),
         showlegend=True,
-        legend=dict(orientation="h", y=1.05, x=0, xanchor='left', bgcolor="rgba(0,0,0,0)", font=dict(color="#333")),
-        # --- AQUÍ ESTÁ EL CAMBIO DE TAMAÑO ---
-        images=[dict(
-            source=logo_data,
-            xref="paper", yref="paper",
-            x=1, y=1.22,
-            sizex=0.12, # <--- Más pequeño (antes 0.18)
-            sizey=0.12, # <--- Más pequeño (antes 0.18)
-            xanchor="right", yanchor="top"
-        )]
+        # --- AQUÍ ESTÁ EL CAMBIO DE ALTURA DE LEYENDA (y=1.15) ---
+        legend=dict(orientation="h", y=1.15, x=0, xanchor='left', bgcolor="rgba(0,0,0,0)", font=dict(color="#333")),
+        images=[dict(source=logo_data, xref="paper", yref="paper", x=1, y=1.22, sizex=0.12, sizey=0.12, xanchor="right", yanchor="top")]
     )
 
     fig.update_xaxes(showgrid=False, linecolor="#333", linewidth=2, tickfont=dict(color="#333", size=12), ticks="outside")
-    fig.update_yaxes(title=f"<b>{col1}</b>", title_font=dict(color=COLOR_Y1), showgrid=True, gridcolor="#f0f0f0", gridwidth=1, linecolor="white", tickfont=dict(color=COLOR_Y1, weight="bold"), ticksuffix="%", zeroline=False, secondary_y=False)
+    fig.update_yaxes(
+        title=f"<b>{col1}</b>", title_font=dict(color=COLOR_Y1), 
+        showgrid=True, gridcolor="#f0f0f0", gridwidth=1, 
+        linecolor="white", tickfont=dict(color=COLOR_Y1, weight="bold"),
+        ticksuffix=suffix1, tickformat=fmt1,
+        zeroline=False, secondary_y=False
+    )
     
     if has_secondary:
         y2_title = f"<b>{col2} - Invertido</b>" if invert_y2 else f"<b>{col2}</b>"
-        fig.update_yaxes(title=y2_title, title_font=dict(color=COLOR_Y2), showgrid=False, tickfont=dict(color=COLOR_Y2), ticksuffix="%", autorange="reversed" if invert_y2 else True, secondary_y=True)
+        fig.update_yaxes(
+            title=y2_title, title_font=dict(color=COLOR_Y2), 
+            showgrid=False, tickfont=dict(color=COLOR_Y2),
+            ticksuffix=suffix2, tickformat=fmt2,
+            autorange="reversed" if invert_y2 else True, secondary_y=True
+        )
 
     recessions = [("1990-07-01", "1991-03-01"), ("2001-03-01", "2001-11-01"), ("2007-12-01", "2009-06-01"), ("2020-02-01", "2020-04-01")]
     df_start_date = df.index.min()
@@ -181,7 +203,11 @@ def create_pro_chart(df, col1, col2=None, invert_y2=False, logo_data=""):
         try:
             if pd.Timestamp(end) > df_start_date:
                 v_start = max(pd.Timestamp(start), df_start_date)
-                fig.add_vrect(x0=v_start, x1=end, fillcolor="#e6e6e6", opacity=0.5, layer="below", line_width=0)
+                fig.add_vrect(
+                    x0=v_start, x1=end, 
+                    fillcolor="#e6e6e6", opacity=0.5, layer="below", line_width=0,
+                    yref="paper", y0=0, y1=1
+                )
         except: pass
         
     meta1 = INDICATOR_CONFIG.get(col1, {"source": "FRED"})
@@ -233,7 +259,7 @@ if not df_full.empty:
     
     if meta_info.get("type") == "macro":
         st.divider()
-        st.subheader(f"📅 Histórico: {y1}")
+        st.subheader(f"Histórico: {y1}")
         
         df_cal = df_plot[[y1]].dropna().sort_index(ascending=False).head(12)
         df_cal['Anterior'] = df_cal[y1].shift(-1)
@@ -250,13 +276,16 @@ if not df_full.empty:
         
         df_cal = df_cal.rename(columns={y1: 'Actual'})
         
-        def fmt_num(x):
-            if pd.isna(x): return ""
-            if "Nóminas" in y1 or "Claims" in y1 or "Liquidez" in y1: return f"{x:,.0f}"
-            return f"{x:.2f}%"
+        is_pct_table = INDICATOR_CONFIG.get(y1, {}).get("is_percent", False)
+        if "Inflación PCE (YoY%)" in y1: is_pct_table = True
 
-        df_cal['Actual'] = df_cal['Actual'].apply(fmt_num)
-        df_cal['Anterior'] = df_cal['Anterior'].apply(fmt_num)
+        def fmt_num_table(x):
+            if pd.isna(x): return ""
+            if is_pct_table: return f"{x:.2f}%"
+            else: return f"{x:,.0f}"
+
+        df_cal['Actual'] = df_cal['Actual'].apply(fmt_num_table)
+        df_cal['Anterior'] = df_cal['Anterior'].apply(fmt_num_table)
         
         df_display = df_cal[['Referencia', 'Publicación (Est.)', 'Actual', 'Anterior']].dropna(subset=['Anterior'])
 
