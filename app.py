@@ -1,6 +1,6 @@
 import streamlit as st
 import pandas as pd
-from fredapi import Fred # <--- Nueva librería oficial
+from fredapi import Fred
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 import datetime
@@ -68,42 +68,33 @@ def get_month_name(month_num):
              7: 'Jul', 8: 'Ago', 9: 'Sep', 10: 'Oct', 11: 'Nov', 12: 'Dic'}
     return meses.get(month_num, '')
 
-# --- 5. MOTOR DE DATOS (NUEVO: FREDAPI) ---
+# --- 5. MOTOR DE DATOS ---
 @st.cache_data(ttl=3600) 
 def get_all_macro_data_long_history():
     start_date = "1980-01-01"
     df_master = pd.DataFrame()
-    
-    # Inicializamos la conexión oficial
     try:
         fred = Fred(api_key=FRED_API_KEY)
-    except:
-        return pd.DataFrame() # Retorno vacío si falla la llave
+    except: return pd.DataFrame()
 
     with st.empty(): 
         for name, config in INDICATOR_CONFIG.items():
             try:
-                # Usamos la librería oficial: fred.get_series()
                 series = fred.get_series(config["fred_id"], observation_start=start_date)
-                # Convertimos la serie a DataFrame con el nombre correcto
                 temp = series.to_frame(name=name)
-                
                 if df_master.empty: df_master = temp
                 else: df_master = df_master.join(temp, how='outer')
-            except Exception: 
-                continue
+            except Exception: continue
     
     if not df_master.empty:
         df_master.index = pd.to_datetime(df_master.index)
         df_calc = df_master.ffill() 
         
-        # Inflación Calculada
         if 'Inflación PCE' in df_calc.columns:
             name_inf = 'Inflación PCE (YoY%)'
             df_master[name_inf] = df_calc['Inflación PCE'].pct_change(12) * 100
             INDICATOR_CONFIG[name_inf] = {"source": "U.S. BEA", "type": "macro"}
             
-        # Curva Tipos
         if 'Bono US 10Y' in df_calc.columns and 'Bono US 2Y' in df_calc.columns:
             name_curve = 'Curva Tipos (10Y-2Y)'
             df_master[name_curve] = df_calc['Bono US 10Y'] - df_calc['Bono US 2Y']
@@ -166,7 +157,15 @@ def create_pro_chart(df, col1, col2=None, invert_y2=False, logo_data=""):
         margin=dict(t=120, r=80, l=80, b=100),
         showlegend=True,
         legend=dict(orientation="h", y=1.05, x=0, xanchor='left', bgcolor="rgba(0,0,0,0)", font=dict(color="#333")),
-        images=[dict(source=logo_data, xref="paper", yref="paper", x=1, y=1.22, sizex=0.18, sizey=0.18, xanchor="right", yanchor="top")]
+        # --- AQUÍ ESTÁ EL CAMBIO DE TAMAÑO ---
+        images=[dict(
+            source=logo_data,
+            xref="paper", yref="paper",
+            x=1, y=1.22,
+            sizex=0.12, # <--- Más pequeño (antes 0.18)
+            sizey=0.12, # <--- Más pequeño (antes 0.18)
+            xanchor="right", yanchor="top"
+        )]
     )
 
     fig.update_xaxes(showgrid=False, linecolor="#333", linewidth=2, tickfont=dict(color="#333", size=12), ticks="outside")
