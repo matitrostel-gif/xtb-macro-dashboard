@@ -29,7 +29,7 @@ st.markdown("""
 # --- 2. CREDENCIALES ---
 FRED_API_KEY = "a913b86d145620f86b690a7e4fe4538e"
 
-# --- 3. CONFIGURACIÓN MAESTRA ---
+# --- 3. CONFIGURACIÓN MAESTRA (Con IDs FRED) ---
 INDICATOR_CONFIG = {
     # Macro - Laboral
     "Tasa Desempleo": {"fred_id": "UNRATE", "source": "U.S. BLS", "type": "macro", "is_percent": True},
@@ -40,6 +40,8 @@ INDICATOR_CONFIG = {
     # Macro - Inflación
     "Inflación PCE": {"fred_id": "PCEPI", "source": "U.S. BEA", "type": "macro", "is_percent": False},
     "IPC Core": {"fred_id": "CPIAUCSL", "source": "U.S. BLS", "type": "macro", "is_percent": False},
+    # Calculada (Definida aquí para que siempre tenga metadata)
+    "Inflación PCE (YoY%)": {"fred_id": "PCEPI", "source": "U.S. BEA", "type": "macro", "is_percent": True},
     
     # Macro - Dinero/Actividad
     "Liquidez FED": {"fred_id": "WALCL", "source": "Federal Reserve", "type": "macro", "is_percent": False},
@@ -49,6 +51,9 @@ INDICATOR_CONFIG = {
     # Datos de Mercado
     "Bono US 10Y": {"fred_id": "DGS10", "source": "Board of Governors", "type": "market", "is_percent": True},
     "Bono US 2Y": {"fred_id": "DGS2", "source": "Board of Governors", "type": "market", "is_percent": True},
+    # Calculada
+    "Curva Tipos (10Y-2Y)": {"fred_id": "DGS10, DGS2", "source": "Board of Governors", "type": "market", "is_percent": True},
+    
     "Tasa FED": {"fred_id": "FEDFUNDS", "source": "Board of Governors", "type": "market", "is_percent": True},
     "Volatilidad VIX": {"fred_id": "VIXCLS", "source": "CBOE", "type": "market", "is_percent": False},
 }
@@ -75,8 +80,6 @@ def get_month_name(month_num):
 
 def get_format_settings(indicator_name):
     config = INDICATOR_CONFIG.get(indicator_name, {})
-    if "Inflación PCE (YoY%)" in indicator_name: return "%", ".2f"
-    if "Curva Tipos" in indicator_name: return "%", ".2f"
     is_pct = config.get("is_percent", False)
     if is_pct: return "%", ".2f"
     else: return "", ",.0f"
@@ -91,7 +94,11 @@ def get_all_macro_data_long_history():
     except: return pd.DataFrame()
 
     with st.empty(): 
-        for name, config in INDICATOR_CONFIG.items():
+        # Iteramos solo sobre las series BASE (las que tienen un solo fred_id simple y no son calculadas manualmente aquí)
+        # Las calculadas se derivan después.
+        series_to_fetch = {k: v for k, v in INDICATOR_CONFIG.items() if "," not in v["fred_id"] and k != "Inflación PCE (YoY%)"}
+        
+        for name, config in series_to_fetch.items():
             try:
                 series = fred.get_series(config["fred_id"], observation_start=start_date)
                 temp = series.to_frame(name=name)
@@ -103,15 +110,12 @@ def get_all_macro_data_long_history():
         df_master.index = pd.to_datetime(df_master.index)
         df_calc = df_master.ffill() 
         
+        # Cálculos Derivados (Nombres deben coincidir con INDICATOR_CONFIG)
         if 'Inflación PCE' in df_calc.columns:
-            name_inf = 'Inflación PCE (YoY%)'
-            df_master[name_inf] = df_calc['Inflación PCE'].pct_change(12) * 100
-            INDICATOR_CONFIG[name_inf] = {"source": "U.S. BEA", "type": "macro", "is_percent": True}
+            df_master['Inflación PCE (YoY%)'] = df_calc['Inflación PCE'].pct_change(12) * 100
             
         if 'Bono US 10Y' in df_calc.columns and 'Bono US 2Y' in df_calc.columns:
-            name_curve = 'Curva Tipos (10Y-2Y)'
-            df_master[name_curve] = df_calc['Bono US 10Y'] - df_calc['Bono US 2Y']
-            INDICATOR_CONFIG[name_curve] = {"source": "Board of Governors", "type": "market", "is_percent": True}
+            df_master['Curva Tipos (10Y-2Y)'] = df_calc['Bono US 10Y'] - df_calc['Bono US 2Y']
             
     return df_master
 
@@ -174,7 +178,6 @@ def create_pro_chart(df, col1, col2=None, invert_y2=False, logo_data=""):
         plot_bgcolor="white", paper_bgcolor="white", height=650,
         margin=dict(t=120, r=80, l=80, b=100),
         showlegend=True,
-        # --- AQUÍ ESTÁ EL CAMBIO DE ALTURA DE LEYENDA (y=1.15) ---
         legend=dict(orientation="h", y=1.15, x=0, xanchor='left', bgcolor="rgba(0,0,0,0)", font=dict(color="#333")),
         images=[dict(source=logo_data, xref="paper", yref="paper", x=1, y=1.22, sizex=0.12, sizey=0.12, xanchor="right", yanchor="top")]
     )
@@ -210,15 +213,18 @@ def create_pro_chart(df, col1, col2=None, invert_y2=False, logo_data=""):
                 )
         except: pass
         
-    meta1 = INDICATOR_CONFIG.get(col1, {"source": "FRED"})
-    source1 = meta1.get("source", "FRED")
-    sources_text = source1
+    # --- PIE DE PÁGINA TRANSPARENTE (FRED IDs) ---
+    meta1 = INDICATOR_CONFIG.get(col1, {})
+    fred_id1 = meta1.get("fred_id", "N/A")
+    db_text = f"FRED {fred_id1}"
+    
     if has_secondary:
-        meta2 = INDICATOR_CONFIG.get(col2, {"source": "FRED"})
-        source2 = meta2.get("source", "FRED")
-        if source2 != source1: sources_text = f"{source1}, {source2}"
+        meta2 = INDICATOR_CONFIG.get(col2, {})
+        fred_id2 = meta2.get("fred_id", "N/A")
+        if fred_id2 != fred_id1:
+            db_text += f", FRED {fred_id2}"
 
-    fig.add_annotation(x=0, y=-0.14, text=f"Database: {sources_text}", xref="paper", yref="paper", showarrow=False, font=dict(size=11, color="gray"), xanchor="left")
+    fig.add_annotation(x=0, y=-0.14, text=f"Database: {db_text}", xref="paper", yref="paper", showarrow=False, font=dict(size=11, color="gray"), xanchor="left")
     fig.add_annotation(x=1, y=-0.14, text="Source: <b>XTB Research</b>", xref="paper", yref="paper", showarrow=False, font=dict(size=11, color="black"), xanchor="right")
 
     return fig
@@ -259,7 +265,7 @@ if not df_full.empty:
     
     if meta_info.get("type") == "macro":
         st.divider()
-        st.subheader(f"Histórico: {y1}")
+        st.subheader(f"📅 Histórico: {y1}")
         
         df_cal = df_plot[[y1]].dropna().sort_index(ascending=False).head(12)
         df_cal['Anterior'] = df_cal[y1].shift(-1)
@@ -277,7 +283,6 @@ if not df_full.empty:
         df_cal = df_cal.rename(columns={y1: 'Actual'})
         
         is_pct_table = INDICATOR_CONFIG.get(y1, {}).get("is_percent", False)
-        if "Inflación PCE (YoY%)" in y1: is_pct_table = True
 
         def fmt_num_table(x):
             if pd.isna(x): return ""
