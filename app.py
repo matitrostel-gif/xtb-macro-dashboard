@@ -1,6 +1,6 @@
 import streamlit as st
 import pandas as pd
-import pandas_datareader.data as web # <--- Nuevo motor ligero
+from fredapi import Fred # <--- Nueva librería oficial
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 import datetime
@@ -68,19 +68,25 @@ def get_month_name(month_num):
              7: 'Jul', 8: 'Ago', 9: 'Sep', 10: 'Oct', 11: 'Nov', 12: 'Dic'}
     return meses.get(month_num, '')
 
-# --- 5. MOTOR DE DATOS (NUEVO: PANDAS DATAREADER) ---
+# --- 5. MOTOR DE DATOS (NUEVO: FREDAPI) ---
 @st.cache_data(ttl=3600) 
 def get_all_macro_data_long_history():
     start_date = "1980-01-01"
     df_master = pd.DataFrame()
     
+    # Inicializamos la conexión oficial
+    try:
+        fred = Fred(api_key=FRED_API_KEY)
+    except:
+        return pd.DataFrame() # Retorno vacío si falla la llave
+
     with st.empty(): 
         for name, config in INDICATOR_CONFIG.items():
             try:
-                # Usamos pandas_datareader en lugar de openbb
-                # Es mucho más robusto para servidores cloud
-                temp = web.DataReader(config["fred_id"], "fred", start_date, api_key=FRED_API_KEY)
-                temp.columns = [name]
+                # Usamos la librería oficial: fred.get_series()
+                series = fred.get_series(config["fred_id"], observation_start=start_date)
+                # Convertimos la serie a DataFrame con el nombre correcto
+                temp = series.to_frame(name=name)
                 
                 if df_master.empty: df_master = temp
                 else: df_master = df_master.join(temp, how='outer')
