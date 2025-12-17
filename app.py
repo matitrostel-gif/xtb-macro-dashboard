@@ -1,6 +1,6 @@
 import streamlit as st
 import pandas as pd
-from openbb import obb
+import pandas_datareader.data as web # <--- Nuevo motor ligero
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 import datetime
@@ -27,7 +27,7 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # --- 2. CREDENCIALES ---
-obb.user.credentials.fred_api_key = "a913b86d145620f86b690a7e4fe4538e"
+FRED_API_KEY = "a913b86d145620f86b690a7e4fe4538e"
 
 # --- 3. CONFIGURACIÓN MAESTRA ---
 INDICATOR_CONFIG = {
@@ -41,7 +41,7 @@ INDICATOR_CONFIG = {
     "Oferta Monetaria M2": {"fred_id": "M2SL", "source": "Federal Reserve", "type": "macro"},
     "Producción Industrial": {"fred_id": "INDPRO", "source": "Federal Reserve", "type": "macro"},
     
-    # Datos de Mercado (Sin Tabla)
+    # Datos de Mercado
     "Bono US 10Y": {"fred_id": "DGS10", "source": "Board of Governors", "type": "market"},
     "Bono US 2Y": {"fred_id": "DGS2", "source": "Board of Governors", "type": "market"},
     "Tasa FED": {"fred_id": "FEDFUNDS", "source": "Board of Governors", "type": "market"},
@@ -68,7 +68,7 @@ def get_month_name(month_num):
              7: 'Jul', 8: 'Ago', 9: 'Sep', 10: 'Oct', 11: 'Nov', 12: 'Dic'}
     return meses.get(month_num, '')
 
-# --- 5. MOTOR DE DATOS ---
+# --- 5. MOTOR DE DATOS (NUEVO: PANDAS DATAREADER) ---
 @st.cache_data(ttl=3600) 
 def get_all_macro_data_long_history():
     start_date = "1980-01-01"
@@ -77,11 +77,15 @@ def get_all_macro_data_long_history():
     with st.empty(): 
         for name, config in INDICATOR_CONFIG.items():
             try:
-                temp = obb.economy.fred_series(config["fred_id"], start_date=start_date).to_df()
+                # Usamos pandas_datareader en lugar de openbb
+                # Es mucho más robusto para servidores cloud
+                temp = web.DataReader(config["fred_id"], "fred", start_date, api_key=FRED_API_KEY)
                 temp.columns = [name]
+                
                 if df_master.empty: df_master = temp
                 else: df_master = df_master.join(temp, how='outer')
-            except: continue
+            except Exception: 
+                continue
     
     if not df_master.empty:
         df_master.index = pd.to_datetime(df_master.index)
@@ -107,7 +111,6 @@ def create_pro_chart(df, col1, col2=None, invert_y2=False, logo_data=""):
     COLOR_Y2 = "#5ca6e5" 
     has_secondary = col2 is not None and col2 != "Ninguno"
     
-    # Smart Trim
     valid_s1 = df[col1].dropna()
     start_date_plot = valid_s1.first_valid_index()
     if has_secondary:
@@ -120,7 +123,6 @@ def create_pro_chart(df, col1, col2=None, invert_y2=False, logo_data=""):
 
     fig = make_subplots(specs=[[{"secondary_y": has_secondary}]])
 
-    # Serie 1
     try:
         s1 = df[col1].dropna()
         if not s1.empty:
@@ -134,7 +136,6 @@ def create_pro_chart(df, col1, col2=None, invert_y2=False, logo_data=""):
             )
     except: pass
 
-    # Serie 2
     if has_secondary:
         try:
             s2 = df[col2].dropna()
@@ -149,7 +150,6 @@ def create_pro_chart(df, col1, col2=None, invert_y2=False, logo_data=""):
                 )
         except: pass
 
-    # Título y Layout
     title_clean_1 = f"{col1} EE.UU" if "Desempleo" in col1 else col1
     title_text = f"<b>{title_clean_1}</b>"
     if has_secondary: title_text += f" vs <b>{col2}</b>"
@@ -224,34 +224,27 @@ if not df_full.empty:
     fig = create_pro_chart(df_plot, y1, y2, inv, logo_b64)
     st.plotly_chart(fig, use_container_width=True)
     
-    # --- CALENDARIO HISTÓRICO (CORREGIDO) ---
     meta_info = INDICATOR_CONFIG.get(y1, {"type": "market"})
     
     if meta_info.get("type") == "macro":
         st.divider()
-        st.subheader(f"Histórico: {y1}")
+        st.subheader(f"📅 Histórico: {y1}")
         
-        # 1. Obtener datos y preparar
         df_cal = df_plot[[y1]].dropna().sort_index(ascending=False).head(12)
         df_cal['Anterior'] = df_cal[y1].shift(-1)
         
-        # --- AQUÍ ESTÁ EL ARREGLO DEL ERROR ---
-        # Asignamos nombre explícito al índice antes de resetear
         df_cal.index.name = 'Fecha_Base'
         df_cal = df_cal.reset_index()
         
-        # Ahora usamos 'Fecha_Base' con seguridad
         df_cal['Mes_Ref'] = df_cal['Fecha_Base'].dt.month
         df_cal['Referencia'] = df_cal['Mes_Ref'].apply(get_month_name) + " " + df_cal['Fecha_Base'].dt.year.astype(str)
         
-        # Estimación de Publicación (Mes siguiente)
         df_cal['Fecha_Pub'] = df_cal['Fecha_Base'] + pd.DateOffset(months=1)
         df_cal['Mes_Pub'] = df_cal['Fecha_Pub'].dt.month
         df_cal['Publicación (Est.)'] = df_cal['Mes_Pub'].apply(get_month_name) + " " + df_cal['Fecha_Pub'].dt.year.astype(str)
         
         df_cal = df_cal.rename(columns={y1: 'Actual'})
         
-        # Formateo
         def fmt_num(x):
             if pd.isna(x): return ""
             if "Nóminas" in y1 or "Claims" in y1 or "Liquidez" in y1: return f"{x:,.0f}"
