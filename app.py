@@ -6,6 +6,7 @@ from plotly.subplots import make_subplots
 import datetime
 import base64
 import os
+import google.generativeai as genai
 
 # --- 1. CONFIGURACIÓN VISUAL ---
 st.set_page_config(layout="wide", page_title="XTB Research Macro Dashboard")
@@ -22,9 +23,13 @@ st.markdown("""
         font-size: 14px;
     }
     div[data-testid="stCheckbox"] { margin-top: 5px; }
-    
-    /* Ajuste para tabla con scroll */
     [data-testid="stDataFrame"] { font-family: 'Arial', sans-serif; }
+    
+    [data-testid="stFileUploader"] {
+        padding: 10px;
+        border: 1px dashed #4a4a4a;
+        border-radius: 5px;
+    }
 </style>
 """, unsafe_allow_html=True)
 
@@ -32,72 +37,28 @@ st.markdown("""
 FRED_API_KEY = "a913b86d145620f86b690a7e4fe4538e"
 
 # --- 3. CONFIGURACIÓN MAESTRA ---
-# 'units': 'lin' (Niveles), 'pc1' (Variación % Anual)
 INDICATOR_CONFIG = {
     # --- MERCADO LABORAL ---
-    "Tasa Desempleo": {
-        "fred_id": "UNRATE", "source": "U.S. BLS", "type": "macro", 
-        "is_percent": True, "units": "lin"
-    },
-    "Tasa Participación Laboral": {
-        "fred_id": "CIVPART", "source": "U.S. BLS", "type": "macro", 
-        "is_percent": True, "units": "lin"
-    },
-    "Nóminas NFP (YoY%)": {
-        "fred_id": "PAYEMS", "source": "U.S. BLS", "type": "macro", 
-        "is_percent": True, "units": "pc1" 
-    },
-    "Initial Jobless Claims (YoY%)": {
-        "fred_id": "ICSA", "source": "U.S. ETA", "type": "macro", 
-        "is_percent": True, "units": "pc1"
-    },
+    "Tasa Desempleo": {"fred_id": "UNRATE", "source": "U.S. BLS", "type": "macro", "is_percent": True, "units": "lin"},
+    "Tasa Participación Laboral": {"fred_id": "CIVPART", "source": "U.S. BLS", "type": "macro", "is_percent": True, "units": "lin"},
+    "Nóminas NFP (YoY%)": {"fred_id": "PAYEMS", "source": "U.S. BLS", "type": "macro", "is_percent": True, "units": "pc1"},
+    "Initial Jobless Claims (YoY%)": {"fred_id": "ICSA", "source": "U.S. ETA", "type": "macro", "is_percent": True, "units": "pc1"},
     
     # --- INFLACIÓN ---
-    "PCE Price Index (YoY%)": { # Simplificado también para consistencia
-        "fred_id": "PCEPI", "source": "U.S. BEA", "type": "macro", 
-        "is_percent": True, "units": "pc1"
-    },
-    # CAMBIO REALIZADO AQUÍ: Abreviado a CPI Core
-    "CPI Core (YoY%)": {
-        "fred_id": "CPIAUCSL", "source": "U.S. BLS", "type": "macro", 
-        "is_percent": True, "units": "pc1"
-    },
+    "PCE Price Index (YoY%)": {"fred_id": "PCEPI", "source": "U.S. BEA", "type": "macro", "is_percent": True, "units": "pc1"},
+    "CPI Core (YoY%)": {"fred_id": "CPIAUCSL", "source": "U.S. BLS", "type": "macro", "is_percent": True, "units": "pc1"},
     
     # --- DINERO Y ACTIVIDAD ---
-    "Liquidez FED (YoY%)": {
-        "fred_id": "WALCL", "source": "Federal Reserve", "type": "macro", 
-        "is_percent": True, "units": "pc1"
-    },
-    "Oferta Monetaria M2 (YoY%)": {
-        "fred_id": "M2SL", "source": "Federal Reserve", "type": "macro", 
-        "is_percent": True, "units": "pc1"
-    },
-    "Producción Industrial (YoY%)": {
-        "fred_id": "INDPRO", "source": "Federal Reserve", "type": "macro", 
-        "is_percent": True, "units": "pc1"
-    },
+    "Liquidez FED (YoY%)": {"fred_id": "WALCL", "source": "Federal Reserve", "type": "macro", "is_percent": True, "units": "pc1"},
+    "Oferta Monetaria M2 (YoY%)": {"fred_id": "M2SL", "source": "Federal Reserve", "type": "macro", "is_percent": True, "units": "pc1"},
+    "Producción Industrial (YoY%)": {"fred_id": "INDPRO", "source": "Federal Reserve", "type": "macro", "is_percent": True, "units": "pc1"},
     
     # --- MERCADO FINANCIERO ---
-    "Bono US 10Y": {
-        "fred_id": "DGS10", "source": "Board of Governors", "type": "market", 
-        "is_percent": True, "units": "lin"
-    },
-    "Bono US 2Y": {
-        "fred_id": "DGS2", "source": "Board of Governors", "type": "market", 
-        "is_percent": True, "units": "lin"
-    },
-    "Curva Tipos (10Y-2Y)": {
-        "fred_id": "DGS10, DGS2", "source": "Board of Governors", "type": "market", 
-        "is_percent": True, "units": "lin"
-    },
-    "Tasa FED": {
-        "fred_id": "FEDFUNDS", "source": "Board of Governors", "type": "market", 
-        "is_percent": True, "units": "lin"
-    },
-    "Volatilidad VIX": {
-        "fred_id": "VIXCLS", "source": "CBOE", "type": "market", 
-        "is_percent": False, "units": "lin"
-    },
+    "Bono US 10Y": {"fred_id": "DGS10", "source": "Board of Governors", "type": "market", "is_percent": True, "units": "lin"},
+    "Bono US 2Y": {"fred_id": "DGS2", "source": "Board of Governors", "type": "market", "is_percent": True, "units": "lin"},
+    "Curva Tipos (10Y-2Y)": {"fred_id": "DGS10, DGS2", "source": "Board of Governors", "type": "market", "is_percent": True, "units": "lin"},
+    "Tasa FED": {"fred_id": "FEDFUNDS", "source": "Board of Governors", "type": "market", "is_percent": True, "units": "lin"},
+    "Volatilidad VIX": {"fred_id": "VIXCLS", "source": "CBOE", "type": "market", "is_percent": False, "units": "lin"},
 }
 
 # --- 4. UTILIDADES ---
@@ -123,7 +84,9 @@ def get_month_name(month_num):
 def get_format_settings(indicator_name):
     config = INDICATOR_CONFIG.get(indicator_name, {})
     is_pct = config.get("is_percent", False)
-    # En gráfico usamos 2 decimales para limpieza visual
+    if indicator_name not in INDICATOR_CONFIG:
+        if "%" in indicator_name: is_pct = True
+        else: is_pct = False
     if is_pct: return "%", ".2f"
     else: return "", ",.2f"
 
@@ -138,7 +101,6 @@ def get_all_macro_data_long_history():
 
     with st.empty(): 
         series_to_fetch = {k: v for k, v in INDICATOR_CONFIG.items() if "," not in v["fred_id"]}
-        
         for name, config in series_to_fetch.items():
             try:
                 series = fred.get_series(config["fred_id"], observation_start=start_date, units=config["units"])
@@ -150,8 +112,6 @@ def get_all_macro_data_long_history():
     if not df_master.empty:
         df_master.index = pd.to_datetime(df_master.index)
         df_calc = df_master.ffill() 
-        
-        # Curva Tipos
         if 'Bono US 10Y' in df_calc.columns and 'Bono US 2Y' in df_calc.columns:
             df_master['Curva Tipos (10Y-2Y)'] = df_calc['Bono US 10Y'] - df_calc['Bono US 2Y']
             
@@ -208,6 +168,8 @@ def create_pro_chart(df, col1, col2=None, invert_y2=False, logo_data=""):
         except: pass
 
     title_clean_1 = f"{col1} EE.UU" if "Desempleo" in col1 else col1
+    if col1 not in INDICATOR_CONFIG: title_clean_1 = col1 
+    
     title_text = f"<b>{title_clean_1}</b>"
     if has_secondary: title_text += f" vs <b>{col2}</b>"
 
@@ -252,12 +214,15 @@ def create_pro_chart(df, col1, col2=None, invert_y2=False, logo_data=""):
         except: pass
         
     meta1 = INDICATOR_CONFIG.get(col1, {})
-    fred_id1 = meta1.get("fred_id", "N/A")
-    db_text = f"FRED {fred_id1}"
+    fred_id1 = meta1.get("fred_id", "External Data" if col1 not in INDICATOR_CONFIG else "N/A")
+    db_text = f"{fred_id1}" if col1 in INDICATOR_CONFIG else "Proprietary Data"
+    
     if has_secondary:
         meta2 = INDICATOR_CONFIG.get(col2, {})
-        fred_id2 = meta2.get("fred_id", "N/A")
-        if fred_id2 != fred_id1: db_text += f", FRED {fred_id2}"
+        fred_id2 = meta2.get("fred_id", "External Data" if col2 not in INDICATOR_CONFIG else "N/A")
+        if fred_id2 != fred_id1: db_text += f", {fred_id2}"
+    
+    if "UNRATE" in db_text or "DGS" in db_text: db_text = "FRED " + db_text
 
     fig.add_annotation(x=0, y=-0.14, text=f"Database: {db_text}", xref="paper", yref="paper", showarrow=False, font=dict(size=11, color="gray"), xanchor="left")
     fig.add_annotation(x=1, y=-0.14, text="Source: <b>XTB Research</b>", xref="paper", yref="paper", showarrow=False, font=dict(size=11, color="black"), xanchor="right")
@@ -267,20 +232,95 @@ def create_pro_chart(df, col1, col2=None, invert_y2=False, logo_data=""):
 # --- 7. INTERFAZ PRINCIPAL ---
 st.title("XTB Research Macro Dashboard")
 
+# --- SIDEBAR: CARGADOR DE EXCEL Y CHAT ---
+with st.sidebar:
+    st.header("📂 Datos Propios")
+    uploaded_file = st.file_uploader("Subir Excel (.xlsx)", type=["xlsx"])
+    
+    st.divider()
+    
+    st.header("🤖 Analista IA (Gemini)")
+    gemini_key = st.text_input("Ingresa tu Gemini API Key:", type="password", help="Pega aquí la clave que empieza con AIza...")
+    
+    if gemini_key:
+        genai.configure(api_key=gemini_key)
+        st.success("IA Conectada ✅")
+    else:
+        st.info("Obtén tu clave gratis en aistudio.google.com")
+
 logo_b64 = get_local_logo_base64()
-df_full = get_all_macro_data_long_history()
+df_fred = get_all_macro_data_long_history()
+
+# --- FUSIÓN DE DATOS ---
+if uploaded_file is not None:
+    try:
+        df_user = pd.read_excel(uploaded_file)
+        date_col = df_user.columns[0]
+        df_user[date_col] = pd.to_datetime(df_user[date_col])
+        df_user = df_user.set_index(date_col)
+        df_user = df_user.select_dtypes(include=['number'])
+        
+        if not df_fred.empty: df_full = df_fred.join(df_user, how='outer')
+        else: df_full = df_user
+        st.sidebar.success(f"Datos cargados: {len(df_user.columns)} series.")
+    except Exception as e:
+        st.sidebar.error(f"Error Excel: {e}")
+        df_full = df_fred
+else:
+    df_full = df_fred
 
 if not df_full.empty:
-    available_indicators = sorted(df_full.columns.tolist())
+    fred_cols = sorted([c for c in df_full.columns if c in INDICATOR_CONFIG])
+    user_cols = sorted([c for c in df_full.columns if c not in INDICATOR_CONFIG])
+    available_indicators = fred_cols + user_cols
     
+    # --- CHATBOT LOGIC (ROBUSTO) ---
+    if gemini_key:
+        with st.sidebar:
+            st.divider()
+            user_question = st.text_area("Pregúntale a tus datos:", placeholder="Ej: ¿Cuál es la correlación entre el desempleo y la inflación?")
+            if st.button("Analizar"):
+                if user_question:
+                    with st.spinner("Analizando datos..."):
+                        try:
+                            # 1. Buscamos modelos disponibles automáticamente
+                            available_models = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
+                            
+                            # 2. Preferencia de modelos: Flash > Pro > Cualquiera
+                            model_name = next((m for m in available_models if 'flash' in m), None)
+                            if not model_name:
+                                model_name = next((m for m in available_models if 'pro' in m), available_models[0])
+                            
+                            # st.info(f"Usando modelo: {model_name}") # Debug opcional
+                            
+                            data_context = df_full.tail(48).to_csv()
+                            model = genai.GenerativeModel(model_name) 
+                            
+                            prompt = f"""
+                            Actúa como un estratega macroeconómico senior de XTB. 
+                            Tienes acceso a los siguientes datos económicos reales (formato CSV, últimos 4 años):
+                            
+                            {data_context}
+                            
+                            Responde a la siguiente pregunta del usuario basándote ESTRICTAMENTE en estos datos.
+                            Si ves correlaciones o tendencias, menciónalas. Sé breve, profesional y directo.
+                            
+                            Pregunta: {user_question}
+                            """
+                            response = model.generate_content(prompt)
+                            st.markdown("### 💡 Análisis IA")
+                            st.write(response.text)
+                        except Exception as e:
+                            st.error(f"Error en Gemini: {e}")
+
+    # --- RESTO DEL DASHBOARD ---
     st.markdown("#### ⚙️ Configuración del Análisis")
     c1, c2, c3, c4 = st.columns([3, 3, 1, 1])
     
     with c1:
-        y1 = st.selectbox("Eje Principal", options=available_indicators, index=available_indicators.index("Tasa Desempleo") if "Tasa Desempleo" in available_indicators else 0)
+        y1 = st.selectbox("Eje Principal", options=available_indicators, index=0)
     with c2:
-        def_idx = available_indicators.index("Tasa Participación Laboral") if "Tasa Participación Laboral" in available_indicators else 0
-        y2 = st.selectbox("Eje Secundario", options=["Ninguno"] + available_indicators, index=def_idx + 1)
+        y2 = st.selectbox("Eje Secundario", options=["Ninguno"] + available_indicators, index=len(available_indicators)//2)
     with c3:
         start_year = st.number_input("Año Mínimo", min_value=1980, max_value=2024, value=2000, step=1)
     with c4:
@@ -296,9 +336,16 @@ if not df_full.empty:
     fig = create_pro_chart(df_plot, y1, y2, inv, logo_b64)
     st.plotly_chart(fig, use_container_width=True)
     
-    meta_info = INDICATOR_CONFIG.get(y1, {"type": "market"})
-    
-    if meta_info.get("type") == "macro":
+    meta_info = INDICATOR_CONFIG.get(y1, {"type": "market"}) 
+    if y1 not in INDICATOR_CONFIG:
+        show_table = True
+        is_pct_table = False 
+        st.caption(f"ℹ️ Mostrando datos de usuario: {y1}")
+    else:
+        show_table = (meta_info.get("type") == "macro")
+        is_pct_table = meta_info.get("is_percent", False)
+
+    if show_table:
         st.divider()
         st.subheader(f"📅 Histórico: {y1}")
         
@@ -317,11 +364,9 @@ if not df_full.empty:
         
         df_cal = df_cal.rename(columns={y1: 'Actual'})
         
-        is_pct_table = INDICATOR_CONFIG.get(y1, {}).get("is_percent", False)
-
         def fmt_num_table(x):
             if pd.isna(x): return ""
-            if is_pct_table: return f"{x:.4f}%" # Alta precisión
+            if is_pct_table: return f"{x:.4f}%" 
             else: return f"{x:,.4f}"
 
         df_cal['Actual'] = df_cal['Actual'].apply(fmt_num_table)
@@ -340,9 +385,8 @@ if not df_full.empty:
                 "Anterior": st.column_config.TextColumn("Dato Anterior", width="small"),
             }
         )
-        st.caption(f"Nota: Datos oficiales completos (sin redondeo). 'Referencia' es el mes medido.")
     else:
-        st.caption(f"ℹ️ Tabla no disponible para datos de alta frecuencia ({y1}).")
+        st.caption(f"ℹ️ Tabla no disponible para datos de alta frecuencia.")
 
 else:
     st.error("Error al cargar los datos.")
