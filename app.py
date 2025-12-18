@@ -22,6 +22,8 @@ st.markdown("""
         font-size: 14px;
     }
     div[data-testid="stCheckbox"] { margin-top: 5px; }
+    
+    /* Ajuste para tabla con scroll */
     [data-testid="stDataFrame"] { font-family: 'Arial', sans-serif; }
 </style>
 """, unsafe_allow_html=True)
@@ -29,33 +31,73 @@ st.markdown("""
 # --- 2. CREDENCIALES ---
 FRED_API_KEY = "a913b86d145620f86b690a7e4fe4538e"
 
-# --- 3. CONFIGURACIÓN MAESTRA (Con IDs FRED) ---
+# --- 3. CONFIGURACIÓN MAESTRA ---
+# 'units': 'lin' (Niveles), 'pc1' (Variación % Anual)
 INDICATOR_CONFIG = {
-    # Macro - Laboral
-    "Tasa Desempleo": {"fred_id": "UNRATE", "source": "U.S. BLS", "type": "macro", "is_percent": True},
-    "Tasa Participación Laboral": {"fred_id": "CIVPART", "source": "U.S. BLS", "type": "macro", "is_percent": True},
-    "Nóminas NFP": {"fred_id": "PAYEMS", "source": "U.S. BLS", "type": "macro", "is_percent": False},
-    "Initial Jobless Claims": {"fred_id": "ICSA", "source": "U.S. ETA", "type": "macro", "is_percent": False},
+    # --- MERCADO LABORAL ---
+    "Tasa Desempleo": {
+        "fred_id": "UNRATE", "source": "U.S. BLS", "type": "macro", 
+        "is_percent": True, "units": "lin"
+    },
+    "Tasa Participación Laboral": {
+        "fred_id": "CIVPART", "source": "U.S. BLS", "type": "macro", 
+        "is_percent": True, "units": "lin"
+    },
+    "Nóminas NFP (YoY%)": {
+        "fred_id": "PAYEMS", "source": "U.S. BLS", "type": "macro", 
+        "is_percent": True, "units": "pc1" 
+    },
+    "Initial Jobless Claims (YoY%)": {
+        "fred_id": "ICSA", "source": "U.S. ETA", "type": "macro", 
+        "is_percent": True, "units": "pc1"
+    },
     
-    # Macro - Inflación
-    "Inflación PCE": {"fred_id": "PCEPI", "source": "U.S. BEA", "type": "macro", "is_percent": False},
-    "IPC Core": {"fred_id": "CPIAUCSL", "source": "U.S. BLS", "type": "macro", "is_percent": False},
-    # Calculada (Definida aquí para que siempre tenga metadata)
-    "Inflación PCE (YoY%)": {"fred_id": "PCEPI", "source": "U.S. BEA", "type": "macro", "is_percent": True},
+    # --- INFLACIÓN ---
+    "PCE Price Index (YoY%)": { # Simplificado también para consistencia
+        "fred_id": "PCEPI", "source": "U.S. BEA", "type": "macro", 
+        "is_percent": True, "units": "pc1"
+    },
+    # CAMBIO REALIZADO AQUÍ: Abreviado a CPI Core
+    "CPI Core (YoY%)": {
+        "fred_id": "CPIAUCSL", "source": "U.S. BLS", "type": "macro", 
+        "is_percent": True, "units": "pc1"
+    },
     
-    # Macro - Dinero/Actividad
-    "Liquidez FED": {"fred_id": "WALCL", "source": "Federal Reserve", "type": "macro", "is_percent": False},
-    "Oferta Monetaria M2": {"fred_id": "M2SL", "source": "Federal Reserve", "type": "macro", "is_percent": False},
-    "Producción Industrial": {"fred_id": "INDPRO", "source": "Federal Reserve", "type": "macro", "is_percent": False},
+    # --- DINERO Y ACTIVIDAD ---
+    "Liquidez FED (YoY%)": {
+        "fred_id": "WALCL", "source": "Federal Reserve", "type": "macro", 
+        "is_percent": True, "units": "pc1"
+    },
+    "Oferta Monetaria M2 (YoY%)": {
+        "fred_id": "M2SL", "source": "Federal Reserve", "type": "macro", 
+        "is_percent": True, "units": "pc1"
+    },
+    "Producción Industrial (YoY%)": {
+        "fred_id": "INDPRO", "source": "Federal Reserve", "type": "macro", 
+        "is_percent": True, "units": "pc1"
+    },
     
-    # Datos de Mercado
-    "Bono US 10Y": {"fred_id": "DGS10", "source": "Board of Governors", "type": "market", "is_percent": True},
-    "Bono US 2Y": {"fred_id": "DGS2", "source": "Board of Governors", "type": "market", "is_percent": True},
-    # Calculada
-    "Curva Tipos (10Y-2Y)": {"fred_id": "DGS10, DGS2", "source": "Board of Governors", "type": "market", "is_percent": True},
-    
-    "Tasa FED": {"fred_id": "FEDFUNDS", "source": "Board of Governors", "type": "market", "is_percent": True},
-    "Volatilidad VIX": {"fred_id": "VIXCLS", "source": "CBOE", "type": "market", "is_percent": False},
+    # --- MERCADO FINANCIERO ---
+    "Bono US 10Y": {
+        "fred_id": "DGS10", "source": "Board of Governors", "type": "market", 
+        "is_percent": True, "units": "lin"
+    },
+    "Bono US 2Y": {
+        "fred_id": "DGS2", "source": "Board of Governors", "type": "market", 
+        "is_percent": True, "units": "lin"
+    },
+    "Curva Tipos (10Y-2Y)": {
+        "fred_id": "DGS10, DGS2", "source": "Board of Governors", "type": "market", 
+        "is_percent": True, "units": "lin"
+    },
+    "Tasa FED": {
+        "fred_id": "FEDFUNDS", "source": "Board of Governors", "type": "market", 
+        "is_percent": True, "units": "lin"
+    },
+    "Volatilidad VIX": {
+        "fred_id": "VIXCLS", "source": "CBOE", "type": "market", 
+        "is_percent": False, "units": "lin"
+    },
 }
 
 # --- 4. UTILIDADES ---
@@ -81,8 +123,9 @@ def get_month_name(month_num):
 def get_format_settings(indicator_name):
     config = INDICATOR_CONFIG.get(indicator_name, {})
     is_pct = config.get("is_percent", False)
+    # En gráfico usamos 2 decimales para limpieza visual
     if is_pct: return "%", ".2f"
-    else: return "", ",.0f"
+    else: return "", ",.2f"
 
 # --- 5. MOTOR DE DATOS ---
 @st.cache_data(ttl=3600) 
@@ -94,13 +137,11 @@ def get_all_macro_data_long_history():
     except: return pd.DataFrame()
 
     with st.empty(): 
-        # Iteramos solo sobre las series BASE (las que tienen un solo fred_id simple y no son calculadas manualmente aquí)
-        # Las calculadas se derivan después.
-        series_to_fetch = {k: v for k, v in INDICATOR_CONFIG.items() if "," not in v["fred_id"] and k != "Inflación PCE (YoY%)"}
+        series_to_fetch = {k: v for k, v in INDICATOR_CONFIG.items() if "," not in v["fred_id"]}
         
         for name, config in series_to_fetch.items():
             try:
-                series = fred.get_series(config["fred_id"], observation_start=start_date)
+                series = fred.get_series(config["fred_id"], observation_start=start_date, units=config["units"])
                 temp = series.to_frame(name=name)
                 if df_master.empty: df_master = temp
                 else: df_master = df_master.join(temp, how='outer')
@@ -110,10 +151,7 @@ def get_all_macro_data_long_history():
         df_master.index = pd.to_datetime(df_master.index)
         df_calc = df_master.ffill() 
         
-        # Cálculos Derivados (Nombres deben coincidir con INDICATOR_CONFIG)
-        if 'Inflación PCE' in df_calc.columns:
-            df_master['Inflación PCE (YoY%)'] = df_calc['Inflación PCE'].pct_change(12) * 100
-            
+        # Curva Tipos
         if 'Bono US 10Y' in df_calc.columns and 'Bono US 2Y' in df_calc.columns:
             df_master['Curva Tipos (10Y-2Y)'] = df_calc['Bono US 10Y'] - df_calc['Bono US 2Y']
             
@@ -144,7 +182,7 @@ def create_pro_chart(df, col1, col2=None, invert_y2=False, logo_data=""):
         if not s1.empty:
             last_v1 = s1.iloc[-1]
             fig.add_trace(go.Scatter(x=s1.index, y=s1, name=col1, line=dict(color=COLOR_Y1, width=2.5), mode='lines'), secondary_y=False)
-            txt_val = f"{last_v1:,.2f}{suffix1}" if suffix1 == "%" else f"{last_v1:,.0f}"
+            txt_val = f"{last_v1:,.2f}{suffix1}" if suffix1 == "%" else f"{last_v1:,.2f}"
             fig.add_annotation(
                 x=s1.index[-1], y=last_v1, text=f" {txt_val}",
                 xref="x", yref="y1", xanchor="left", showarrow=False,
@@ -160,7 +198,7 @@ def create_pro_chart(df, col1, col2=None, invert_y2=False, logo_data=""):
             if not s2.empty:
                 last_v2 = s2.iloc[-1]
                 fig.add_trace(go.Scatter(x=s2.index, y=s2, name=col2, line=dict(color=COLOR_Y2, width=2, dash='dash'), mode='lines'), secondary_y=True)
-                txt_val2 = f"{last_v2:,.2f}{suffix2}" if suffix2 == "%" else f"{last_v2:,.0f}"
+                txt_val2 = f"{last_v2:,.2f}{suffix2}" if suffix2 == "%" else f"{last_v2:,.2f}"
                 fig.add_annotation(
                     x=s2.index[-1], y=last_v2, text=f" {txt_val2}",
                     xref="x", yref="y2", xanchor="left", showarrow=False,
@@ -213,16 +251,13 @@ def create_pro_chart(df, col1, col2=None, invert_y2=False, logo_data=""):
                 )
         except: pass
         
-    # --- PIE DE PÁGINA TRANSPARENTE (FRED IDs) ---
     meta1 = INDICATOR_CONFIG.get(col1, {})
     fred_id1 = meta1.get("fred_id", "N/A")
     db_text = f"FRED {fred_id1}"
-    
     if has_secondary:
         meta2 = INDICATOR_CONFIG.get(col2, {})
         fred_id2 = meta2.get("fred_id", "N/A")
-        if fred_id2 != fred_id1:
-            db_text += f", FRED {fred_id2}"
+        if fred_id2 != fred_id1: db_text += f", FRED {fred_id2}"
 
     fig.add_annotation(x=0, y=-0.14, text=f"Database: {db_text}", xref="paper", yref="paper", showarrow=False, font=dict(size=11, color="gray"), xanchor="left")
     fig.add_annotation(x=1, y=-0.14, text="Source: <b>XTB Research</b>", xref="paper", yref="paper", showarrow=False, font=dict(size=11, color="black"), xanchor="right")
@@ -267,7 +302,7 @@ if not df_full.empty:
         st.divider()
         st.subheader(f"📅 Histórico: {y1}")
         
-        df_cal = df_plot[[y1]].dropna().sort_index(ascending=False).head(12)
+        df_cal = df_plot[[y1]].dropna().sort_index(ascending=False)
         df_cal['Anterior'] = df_cal[y1].shift(-1)
         
         df_cal.index.name = 'Fecha_Base'
@@ -286,8 +321,8 @@ if not df_full.empty:
 
         def fmt_num_table(x):
             if pd.isna(x): return ""
-            if is_pct_table: return f"{x:.2f}%"
-            else: return f"{x:,.0f}"
+            if is_pct_table: return f"{x:.4f}%" # Alta precisión
+            else: return f"{x:,.4f}"
 
         df_cal['Actual'] = df_cal['Actual'].apply(fmt_num_table)
         df_cal['Anterior'] = df_cal['Anterior'].apply(fmt_num_table)
@@ -305,7 +340,7 @@ if not df_full.empty:
                 "Anterior": st.column_config.TextColumn("Dato Anterior", width="small"),
             }
         )
-        st.caption(f"Nota: 'Referencia' es el mes medido. 'Publicación' es el mes estimado de salida del reporte.")
+        st.caption(f"Nota: Datos oficiales completos (sin redondeo). 'Referencia' es el mes medido.")
     else:
         st.caption(f"ℹ️ Tabla no disponible para datos de alta frecuencia ({y1}).")
 
