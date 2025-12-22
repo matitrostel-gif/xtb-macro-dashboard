@@ -91,9 +91,10 @@ def get_format_settings(indicator_name):
     else: return "", ",.2f"
 
 # --- 5. MOTOR DE DATOS ---
-@st.cache_data(ttl=3600) 
+# CACHÉ REDUCIDO A 60 SEGUNDOS
+@st.cache_data(ttl=60) 
 def get_all_macro_data_long_history():
-    start_date = "1980-01-01"
+    start_date = "1970-01-01" 
     df_master = pd.DataFrame()
     try:
         fred = Fred(api_key=FRED_API_KEY)
@@ -125,23 +126,21 @@ def create_pro_chart(df, col1, col2=None, invert_y2=False, logo_data=""):
     
     suffix1, fmt1 = get_format_settings(col1)
     
-    valid_s1 = df[col1].dropna()
-    start_date_plot = valid_s1.first_valid_index()
-    if has_secondary:
-        valid_s2 = df[col2].dropna()
-        idx2 = valid_s2.first_valid_index()
-        if start_date_plot and idx2: start_date_plot = min(start_date_plot, idx2)
-        elif idx2: start_date_plot = idx2
-    if start_date_plot:
-        df = df[df.index >= start_date_plot]
-
     fig = make_subplots(specs=[[{"secondary_y": has_secondary}]])
+
+    hover_fmt = "%{x|%A, %b %d, %Y}"
 
     try:
         s1 = df[col1].dropna()
         if not s1.empty:
             last_v1 = s1.iloc[-1]
-            fig.add_trace(go.Scatter(x=s1.index, y=s1, name=col1, line=dict(color=COLOR_Y1, width=2.5), mode='lines'), secondary_y=False)
+            fig.add_trace(go.Scatter(
+                x=s1.index, y=s1, name=col1, 
+                line=dict(color=COLOR_Y1, width=2.5), 
+                mode='lines',
+                hovertemplate=f"<b>{col1}</b><br>{hover_fmt}: %{{y:,.2f}}{suffix1}<extra></extra>"
+            ), secondary_y=False)
+            
             txt_val = f"{last_v1:,.2f}{suffix1}" if suffix1 == "%" else f"{last_v1:,.2f}"
             fig.add_annotation(
                 x=s1.index[-1], y=last_v1, text=f" {txt_val}",
@@ -157,7 +156,13 @@ def create_pro_chart(df, col1, col2=None, invert_y2=False, logo_data=""):
             s2 = df[col2].dropna()
             if not s2.empty:
                 last_v2 = s2.iloc[-1]
-                fig.add_trace(go.Scatter(x=s2.index, y=s2, name=col2, line=dict(color=COLOR_Y2, width=2, dash='dash'), mode='lines'), secondary_y=True)
+                fig.add_trace(go.Scatter(
+                    x=s2.index, y=s2, name=col2, 
+                    line=dict(color=COLOR_Y2, width=2, dash='dash'), 
+                    mode='lines',
+                    hovertemplate=f"<b>{col2}</b><br>{hover_fmt}: %{{y:,.2f}}{suffix2}<extra></extra>"
+                ), secondary_y=True)
+                
                 txt_val2 = f"{last_v2:,.2f}{suffix2}" if suffix2 == "%" else f"{last_v2:,.2f}"
                 fig.add_annotation(
                     x=s2.index[-1], y=last_v2, text=f" {txt_val2}",
@@ -182,7 +187,25 @@ def create_pro_chart(df, col1, col2=None, invert_y2=False, logo_data=""):
         images=[dict(source=logo_data, xref="paper", yref="paper", x=1, y=1.22, sizex=0.12, sizey=0.12, xanchor="right", yanchor="top")]
     )
 
-    fig.update_xaxes(showgrid=False, linecolor="#333", linewidth=2, tickfont=dict(color="#333", size=12), ticks="outside")
+    # --- BOTONES DE RANGO DE TIEMPO CON COLOR ---
+    fig.update_xaxes(
+        showgrid=False, linecolor="#333", linewidth=2, tickfont=dict(color="#333", size=12), ticks="outside",
+        rangeselector=dict(
+            buttons=list([
+                dict(count=1, label="1Y", step="year", stepmode="backward"),
+                dict(count=5, label="5Y", step="year", stepmode="backward"),
+                dict(count=10, label="10Y", step="year", stepmode="backward"),
+                dict(step="all", label="Max")
+            ]),
+            bgcolor="white",
+            activecolor="#e6e6e6",
+            x=0, y=1,
+            xanchor='left', yanchor='bottom',
+            # --- AQUÍ ESTÁ EL CAMBIO DE COLOR ---
+            font=dict(size=11, color="#333333") 
+        )
+    )
+    
     fig.update_yaxes(
         title=f"<b>{col1}</b>", title_font=dict(color=COLOR_Y1), 
         showgrid=True, gridcolor="#f0f0f0", gridwidth=1, 
@@ -232,16 +255,13 @@ def create_pro_chart(df, col1, col2=None, invert_y2=False, logo_data=""):
 # --- 7. INTERFAZ PRINCIPAL ---
 st.title("XTB Research Macro Dashboard")
 
-# --- SIDEBAR: CARGADOR DE EXCEL Y CHAT ---
+# --- SIDEBAR ---
 with st.sidebar:
     st.header("📂 Datos Propios")
     uploaded_file = st.file_uploader("Subir Excel (.xlsx)", type=["xlsx"])
-    
     st.divider()
-    
     st.header("🤖 Analista IA (Gemini)")
     gemini_key = st.text_input("Ingresa tu Gemini API Key:", type="password", help="Pega aquí la clave que empieza con AIza...")
-    
     if gemini_key:
         genai.configure(api_key=gemini_key)
         st.success("IA Conectada ✅")
@@ -259,7 +279,6 @@ if uploaded_file is not None:
         df_user[date_col] = pd.to_datetime(df_user[date_col])
         df_user = df_user.set_index(date_col)
         df_user = df_user.select_dtypes(include=['number'])
-        
         if not df_fred.empty: df_full = df_fred.join(df_user, how='outer')
         else: df_full = df_user
         st.sidebar.success(f"Datos cargados: {len(df_user.columns)} series.")
@@ -274,7 +293,7 @@ if not df_full.empty:
     user_cols = sorted([c for c in df_full.columns if c not in INDICATOR_CONFIG])
     available_indicators = fred_cols + user_cols
     
-    # --- CHATBOT LOGIC (ROBUSTO) ---
+    # --- CHATBOT ---
     if gemini_key:
         with st.sidebar:
             st.divider()
@@ -283,15 +302,10 @@ if not df_full.empty:
                 if user_question:
                     with st.spinner("Analizando datos..."):
                         try:
-                            # 1. Buscamos modelos disponibles automáticamente
                             available_models = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
-                            
-                            # 2. Preferencia de modelos: Flash > Pro > Cualquiera
                             model_name = next((m for m in available_models if 'flash' in m), None)
                             if not model_name:
                                 model_name = next((m for m in available_models if 'pro' in m), available_models[0])
-                            
-                            # st.info(f"Usando modelo: {model_name}") # Debug opcional
                             
                             data_context = df_full.tail(48).to_csv()
                             model = genai.GenerativeModel(model_name) 
@@ -299,12 +313,9 @@ if not df_full.empty:
                             prompt = f"""
                             Actúa como un estratega macroeconómico senior de XTB. 
                             Tienes acceso a los siguientes datos económicos reales (formato CSV, últimos 4 años):
-                            
                             {data_context}
-                            
                             Responde a la siguiente pregunta del usuario basándote ESTRICTAMENTE en estos datos.
                             Si ves correlaciones o tendencias, menciónalas. Sé breve, profesional y directo.
-                            
                             Pregunta: {user_question}
                             """
                             response = model.generate_content(prompt)
@@ -313,7 +324,7 @@ if not df_full.empty:
                         except Exception as e:
                             st.error(f"Error en Gemini: {e}")
 
-    # --- RESTO DEL DASHBOARD ---
+    # --- DASHBOARD ---
     st.markdown("#### ⚙️ Configuración del Análisis")
     c1, c2, c3, c4 = st.columns([3, 3, 1, 1])
     
@@ -322,20 +333,21 @@ if not df_full.empty:
     with c2:
         y2 = st.selectbox("Eje Secundario", options=["Ninguno"] + available_indicators, index=len(available_indicators)//2)
     with c3:
-        start_year = st.number_input("Año Mínimo", min_value=1980, max_value=2024, value=2000, step=1)
+        start_year = st.number_input("Año Tabla", min_value=1980, max_value=2024, value=2020, step=1)
     with c4:
         st.write("") 
         st.write("")
         inv = st.checkbox("Invertir Eje Der.", value=True)
 
-    start_dt_user = pd.to_datetime(f"{start_year}-01-01")
-    df_plot = df_full[df_full.index >= start_dt_user]
-    
     st.divider()
     
-    fig = create_pro_chart(df_plot, y1, y2, inv, logo_b64)
+    fig = create_pro_chart(df_full, y1, y2, inv, logo_b64)
     st.plotly_chart(fig, use_container_width=True)
     
+    # --- TABLA HISTÓRICA ---
+    start_dt_table = pd.to_datetime(f"{start_year}-01-01")
+    df_table_view = df_full[df_full.index >= start_dt_table]
+
     meta_info = INDICATOR_CONFIG.get(y1, {"type": "market"}) 
     if y1 not in INDICATOR_CONFIG:
         show_table = True
@@ -349,7 +361,7 @@ if not df_full.empty:
         st.divider()
         st.subheader(f"📅 Histórico: {y1}")
         
-        df_cal = df_plot[[y1]].dropna().sort_index(ascending=False)
+        df_cal = df_table_view[[y1]].dropna().sort_index(ascending=False)
         df_cal['Anterior'] = df_cal[y1].shift(-1)
         
         df_cal.index.name = 'Fecha_Base'
