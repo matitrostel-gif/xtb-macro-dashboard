@@ -26,7 +26,7 @@ st.markdown("""
     div[data-testid="stCheckbox"] { margin-top: 5px; }
     [data-testid="stDataFrame"] { font-family: 'Arial', sans-serif; }
     
-    /* File Uploader (Buzón) */
+    /* Buzón de Excel */
     [data-testid="stFileUploader"] {
         padding: 10px;
         border: 1px dashed #4a4a4a;
@@ -34,14 +34,15 @@ st.markdown("""
         margin-bottom: 15px;
     }
     
-    /* Estilos TABS en Sidebar */
+    /* Pestañas Simples en Sidebar */
     .stTabs [data-baseweb="tab-list"] { gap: 2px; }
     .stTabs [data-baseweb="tab"] {
-        padding: 4px 8px;
-        font-size: 11px;
+        padding: 6px 10px;
+        font-size: 12px;
         background-color: #262730;
         color: #ffffff;
         border-radius: 4px 4px 0px 0px;
+        flex-grow: 1;
     }
     .stTabs [aria-selected="true"] {
         background-color: #ff4b4b;
@@ -98,7 +99,7 @@ def get_format_settings(indicator_name):
     if is_pct: return "%", ".2f"
     else: return "", ",.2f"
 
-# --- 5. MOTOR DE DATOS (ESTABLE) ---
+# --- 5. MOTOR DE DATOS (Estable) ---
 @st.cache_data(ttl=60) 
 def get_all_macro_data_long_history():
     start_date = "1970-01-01" 
@@ -125,7 +126,7 @@ def get_all_macro_data_long_history():
             
     return df_master
 
-# --- 6. FÁBRICA DE GRÁFICOS (FIX 2026/2027) ---
+# --- 6. FÁBRICA DE GRÁFICOS (CON ARREGLO DE FECHAS) ---
 def create_pro_chart(df, col1, col2=None, invert_y2=False, logo_data="", config_format=None):
     
     if config_format is None:
@@ -136,7 +137,8 @@ def create_pro_chart(df, col1, col2=None, invert_y2=False, logo_data="", config_
     has_secondary = col2 is not None and col2 != "Ninguno"
     suffix1, fmt1 = get_format_settings(col1)
     
-    # 1. FILTRADO ESTRICTO DE FECHAS (CORTAFUEGOS)
+    # 1. FILTRADO ESTRICTO (SOLUCIÓN GLITCH FECHAS)
+    # Cortamos todo lo que sea mayor a hoy
     hoy_real = datetime.datetime.now()
     if not df.empty:
         df = df[df.index <= hoy_real] 
@@ -144,10 +146,12 @@ def create_pro_chart(df, col1, col2=None, invert_y2=False, logo_data="", config_
     fig = make_subplots(specs=[[{"secondary_y": has_secondary}]])
     hover_fmt = "%{x|%A, %b %d, %Y}"
 
+    # EJE 1
     try:
         s1 = df[col1].dropna()
         if not s1.empty:
             last_v1 = s1.iloc[-1]
+            
             if config_format["type"] == "Línea":
                 fig.add_trace(go.Scatter(
                     x=s1.index, y=s1, name=col1, 
@@ -174,6 +178,7 @@ def create_pro_chart(df, col1, col2=None, invert_y2=False, logo_data="", config_
             )
     except: pass
 
+    # EJE 2
     if has_secondary:
         suffix2, fmt2 = get_format_settings(col2)
         try:
@@ -194,9 +199,7 @@ def create_pro_chart(df, col1, col2=None, invert_y2=False, logo_data="", config_
                 )
         except: pass
 
-    title_clean_1 = f"{col1} EE.UU" if "Desempleo" in col1 else col1
-    if col1 not in INDICATOR_CONFIG: title_clean_1 = col1 
-    title_text = f"<b>{title_clean_1}</b>"
+    title_text = f"<b>{col1}</b>" if "Desempleo" not in col1 else f"<b>{col1} EE.UU</b>"
     if has_secondary: title_text += f" vs <b>{col2}</b>"
 
     fig.update_layout(
@@ -207,11 +210,12 @@ def create_pro_chart(df, col1, col2=None, invert_y2=False, logo_data="", config_
         images=[dict(source=logo_data, xref="paper", yref="paper", x=1, y=1.22, sizex=0.12, sizey=0.12, xanchor="right", yanchor="top")]
     )
 
-    # 2. DEFINIR RANGO INICIAL
+    # 2. DEFINIR RANGO VISUAL INICIAL (SOLUCIÓN DEFINITIVA)
+    # Esto asegura que al cargar se vea [Hoy - 1 año, Hoy] sin huecos.
     inicio_1y = hoy_real - datetime.timedelta(days=365)
 
     fig.update_xaxes(
-        range=[inicio_1y, hoy_real], 
+        range=[inicio_1y, hoy_real],  # <--- RANGO FIJADO
         showgrid=False, linecolor="#333", linewidth=2, tickfont=dict(color="#333", size=12), ticks="outside",
         rangeselector=dict(
             buttons=list([
@@ -271,7 +275,7 @@ def create_pro_chart(df, col1, col2=None, invert_y2=False, logo_data="", config_
 # --- 7. INTERFAZ PRINCIPAL ---
 st.title("XTB Research Macro Dashboard")
 
-# --- SIDEBAR COLAPSABLE ---
+# --- SIDEBAR LIMPIO (SIN FUNCIONES COMPLEJAS DE FRED) ---
 with st.sidebar:
     st.header("📂 Datos Propios")
     uploaded_file = st.file_uploader("Subir Excel (.xlsx)", type=["xlsx"])
@@ -280,7 +284,7 @@ with st.sidebar:
     
     st.header("🛠️ Configuración & Edición")
     
-    # Panel de Edición (Tabs Simples)
+    # PESTAÑAS SIMPLIFICADAS (Solo Selectores y Estilo Básico)
     tab_edit, tab_add, tab_fmt = st.tabs(["EDIT LINE", "ADD LINE", "FORMAT"])
     
     with tab_edit:
@@ -290,8 +294,8 @@ with st.sidebar:
         invert_y2 = st.checkbox("Invertir Eje Der.", value=True)
         
     with tab_add:
-        st.caption("Configuración Extra")
-        st.info("Para subir datos, usa el cargador 'Datos Propios' arriba.")
+        st.caption("Información")
+        st.info("Para subir series externas, utilice el cargador 'Datos Propios' en la parte superior.")
         
     with tab_fmt:
         st.caption("Estilo Visual")
