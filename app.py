@@ -102,7 +102,8 @@ def get_format_settings(indicator_name):
 # --- 5. MOTOR DE DATOS ---
 @st.cache_data(ttl=60) 
 def get_all_macro_data_long_history():
-    start_date = "1970-01-01" 
+    # Pedimos datos desde 1920 para asegurar que tenemos todo el historial posible
+    start_date = "1920-01-01" 
     df_master = pd.DataFrame()
     try:
         fred = Fred(api_key=FRED_API_KEY)
@@ -126,7 +127,7 @@ def get_all_macro_data_long_history():
             
     return df_master
 
-# --- 6. FÁBRICA DE GRÁFICOS (FIX FECHAS APLICADO) ---
+# --- 6. FÁBRICA DE GRÁFICOS (RANGO DINÁMICO ARREGLADO) ---
 def create_pro_chart(df, col1, col2=None, invert_y2=False, logo_data="", config_format=None):
     
     if config_format is None:
@@ -137,7 +138,7 @@ def create_pro_chart(df, col1, col2=None, invert_y2=False, logo_data="", config_
     has_secondary = col2 is not None and col2 != "Ninguno"
     suffix1, fmt1 = get_format_settings(col1)
     
-    # 1. FILTRADO ESTRICTO (SOLUCIÓN GLITCH FECHAS)
+    # 1. CORTE FUTURO (Eliminar > Hoy)
     hoy_real = datetime.datetime.now()
     if not df.empty:
         df = df[df.index <= hoy_real] 
@@ -145,10 +146,14 @@ def create_pro_chart(df, col1, col2=None, invert_y2=False, logo_data="", config_
     fig = make_subplots(specs=[[{"secondary_y": has_secondary}]])
     hover_fmt = "%{x|%A, %b %d, %Y}"
 
+    # Variable para guardar la primera fecha válida real del dato seleccionado
+    first_valid_date = None
+
     # EJE 1
     try:
         s1 = df[col1].dropna()
         if not s1.empty:
+            first_valid_date = s1.index[0] # Capturamos cuándo empieza este dato (ej: 1960)
             last_v1 = s1.iloc[-1]
             
             if config_format["type"] == "Línea":
@@ -183,6 +188,11 @@ def create_pro_chart(df, col1, col2=None, invert_y2=False, logo_data="", config_
         try:
             s2 = df[col2].dropna()
             if not s2.empty:
+                # Si hay eje secundario, el inicio puede ser el mínimo de los dos
+                start_2 = s2.index[0]
+                if first_valid_date is None or start_2 < first_valid_date:
+                    first_valid_date = start_2
+                    
                 last_v2 = s2.iloc[-1]
                 fig.add_trace(go.Scatter(
                     x=s2.index, y=s2, name=col2, 
@@ -198,7 +208,9 @@ def create_pro_chart(df, col1, col2=None, invert_y2=False, logo_data="", config_
                 )
         except: pass
 
-    title_text = f"<b>{col1}</b>" if "Desempleo" not in col1 else f"<b>{col1} EE.UU</b>"
+    title_clean_1 = f"{col1} EE.UU" if "Desempleo" in col1 else col1
+    if col1 not in INDICATOR_CONFIG: title_clean_1 = col1 
+    title_text = f"<b>{title_clean_1}</b>"
     if has_secondary: title_text += f" vs <b>{col2}</b>"
 
     fig.update_layout(
@@ -209,11 +221,14 @@ def create_pro_chart(df, col1, col2=None, invert_y2=False, logo_data="", config_
         images=[dict(source=logo_data, xref="paper", yref="paper", x=1, y=1.22, sizex=0.12, sizey=0.12, xanchor="right", yanchor="top")]
     )
 
-    # 2. DEFINIR RANGO VISUAL INICIAL
-    inicio_1y = hoy_real - datetime.timedelta(days=365)
-
+    # 2. DEFINIR RANGO VISUAL DINÁMICO
+    # Si no hay datos, usamos 2000. Si hay, usamos la fecha real de inicio del dato.
+    if first_valid_date is None: first_valid_date = pd.Timestamp("2000-01-01")
+    
+    # IMPORTANTE: Esto arregla el hueco izquierdo. El gráfico empieza donde empieza el dato.
+    # Y el hueco derecho se arregla forzando el fin en hoy_real.
     fig.update_xaxes(
-        range=[inicio_1y, hoy_real], 
+        range=[first_valid_date, hoy_real], 
         showgrid=False, linecolor="#333", linewidth=2, tickfont=dict(color="#333", size=12), ticks="outside",
         rangeselector=dict(
             buttons=list([
@@ -241,17 +256,23 @@ def create_pro_chart(df, col1, col2=None, invert_y2=False, logo_data="", config_
         )
 
     if config_format["rec"]:
-        recessions = [("1990-07-01", "1991-03-01"), ("2001-03-01", "2001-11-01"), ("2007-12-01", "2009-06-01"), ("2020-02-01", "2020-04-01")]
+        # LISTA COMPLETA DE RECESIONES NBER (Desde 1948)
+        recessions = [
+            ("1948-11-01", "1949-10-01"), ("1953-07-01", "1954-05-01"), ("1957-08-01", "1958-04-01"),
+            ("1960-04-01", "1961-02-01"), ("1969-12-01", "1970-11-01"), ("1973-11-01", "1975-03-01"),
+            ("1980-01-01", "1980-07-01"), ("1981-07-01", "1982-11-01"), ("1990-07-01", "1991-03-01"),
+            ("2001-03-01", "2001-11-01"), ("2007-12-01", "2009-06-01"), ("2020-02-01", "2020-04-01")
+        ]
         if not df.empty:
-            df_start = df.index.min()
-            df_end = df.index.max()
+            # Límites de recesión ajustados a los datos visibles
             for start, end in recessions:
                 try:
                     s_dt = pd.Timestamp(start)
                     e_dt = pd.Timestamp(end)
-                    if e_dt > df_start and s_dt < df_end:
-                        v_s = max(s_dt, df_start)
-                        v_e = min(e_dt, df_end)
+                    # Dibujamos si la recesión está dentro del rango de datos del indicador
+                    if e_dt > first_valid_date:
+                        v_s = max(s_dt, first_valid_date)
+                        v_e = min(e_dt, hoy_real)
                         fig.add_vrect(x0=v_s, x1=v_e, fillcolor="#e6e6e6", opacity=0.5, layer="below", line_width=0, yref="paper", y0=0, y1=1)
                 except: pass
         
@@ -382,16 +403,14 @@ if not df_full.empty:
         df_cal = df_cal.rename(columns={y1_sel: 'Actual'})
         is_pct_table = meta_info.get("is_percent", False)
         
-        # --- FUNCIÓN DE FORMATO CORREGIDA ---
+        # Formato limpio sin ceros extra
         def fmt_num_table(x):
             if pd.isna(x): return ""
-            # Si es porcentaje, usaremos 2 decimales y quitaremos el .00 si existe para limpiar
             if is_pct_table:
                 txt = f"{x:.2f}"
                 if txt.endswith(".00"): txt = txt[:-3]
                 return f"{txt}%"
             else:
-                # Si es número normal, 2 decimales limpios
                 txt = f"{x:,.2f}"
                 if txt.endswith(".00"): txt = txt[:-3]
                 return txt
