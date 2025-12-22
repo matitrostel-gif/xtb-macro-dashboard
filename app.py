@@ -4,6 +4,7 @@ from fredapi import Fred
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 import datetime
+from datetime import timedelta
 import base64
 import os
 import google.generativeai as genai
@@ -25,11 +26,12 @@ st.markdown("""
     div[data-testid="stCheckbox"] { margin-top: 5px; }
     [data-testid="stDataFrame"] { font-family: 'Arial', sans-serif; }
     
+    /* El File Uploader (Buzón) con estilo */
     [data-testid="stFileUploader"] {
         padding: 10px;
         border: 1px dashed #4a4a4a;
         border-radius: 5px;
-        margin-bottom: 20px;
+        margin-bottom: 15px;
     }
     
     /* Estilos TABS en Sidebar */
@@ -53,22 +55,15 @@ FRED_API_KEY = "a913b86d145620f86b690a7e4fe4538e"
 
 # --- 3. CONFIGURACIÓN MAESTRA ---
 INDICATOR_CONFIG = {
-    # --- MERCADO LABORAL ---
     "Tasa Desempleo": {"fred_id": "UNRATE", "source": "U.S. BLS", "type": "macro", "is_percent": True, "units": "lin"},
     "Tasa Participación Laboral": {"fred_id": "CIVPART", "source": "U.S. BLS", "type": "macro", "is_percent": True, "units": "lin"},
     "Nóminas NFP (YoY%)": {"fred_id": "PAYEMS", "source": "U.S. BLS", "type": "macro", "is_percent": True, "units": "pc1"},
     "Initial Jobless Claims (YoY%)": {"fred_id": "ICSA", "source": "U.S. ETA", "type": "macro", "is_percent": True, "units": "pc1"},
-    
-    # --- INFLACIÓN ---
     "PCE Price Index (YoY%)": {"fred_id": "PCEPI", "source": "U.S. BEA", "type": "macro", "is_percent": True, "units": "pc1"},
     "CPI Core (YoY%)": {"fred_id": "CPIAUCSL", "source": "U.S. BLS", "type": "macro", "is_percent": True, "units": "pc1"},
-    
-    # --- DINERO Y ACTIVIDAD ---
     "Liquidez FED (YoY%)": {"fred_id": "WALCL", "source": "Federal Reserve", "type": "macro", "is_percent": True, "units": "pc1"},
     "Oferta Monetaria M2 (YoY%)": {"fred_id": "M2SL", "source": "Federal Reserve", "type": "macro", "is_percent": True, "units": "pc1"},
     "Producción Industrial (YoY%)": {"fred_id": "INDPRO", "source": "Federal Reserve", "type": "macro", "is_percent": True, "units": "pc1"},
-    
-    # --- MERCADO FINANCIERO ---
     "Bono US 10Y": {"fred_id": "DGS10", "source": "Board of Governors", "type": "market", "is_percent": True, "units": "lin"},
     "Bono US 2Y": {"fred_id": "DGS2", "source": "Board of Governors", "type": "market", "is_percent": True, "units": "lin"},
     "Curva Tipos (10Y-2Y)": {"fred_id": "DGS10, DGS2", "source": "Board of Governors", "type": "market", "is_percent": True, "units": "lin"},
@@ -85,9 +80,7 @@ def get_local_logo_base64():
         if os.path.exists(full_path):
             try:
                 with open(full_path, "rb") as f:
-                    encoded = base64.b64encode(f.read()).decode()
-                ext = "jpeg" if "jpg" in filename else "png"
-                return f"data:image/{ext};base64,{encoded}"
+                    return f"data:image/{'png' if 'png' in filename else 'jpeg'};base64,{base64.b64encode(f.read()).decode()}"
             except: continue
     return ""
 
@@ -132,7 +125,7 @@ def get_all_macro_data_long_history():
             
     return df_master
 
-# --- 6. FÁBRICA DE GRÁFICOS (CONFIGURABLE) ---
+# --- 6. FÁBRICA DE GRÁFICOS (FIX 2026/2027 & BOTONES INTERNOS) ---
 def create_pro_chart(df, col1, col2=None, invert_y2=False, logo_data="", config_format=None):
     
     if config_format is None:
@@ -141,40 +134,36 @@ def create_pro_chart(df, col1, col2=None, invert_y2=False, logo_data="", config_
     COLOR_Y1 = config_format["color"]
     COLOR_Y2 = "#5ca6e5" 
     has_secondary = col2 is not None and col2 != "Ninguno"
-    
     suffix1, fmt1 = get_format_settings(col1)
     
-    # 1. FILTRADO DE DATOS (ELIMINAR FUTURO)
-    # Cortamos el DF para que no tenga nada posterior a HOY
-    df = df[df.index <= datetime.datetime.now()]
+    # 1. FILTRADO ESTRICTO DE FECHAS (CORTAFUEGOS DE DATOS FUTUROS)
+    # Esto elimina cualquier dato "fantasma" que Plotly pudiera interpretar como futuro
+    hoy_real = datetime.datetime.now()
+    df = df[df.index <= hoy_real] 
     
     fig = make_subplots(specs=[[{"secondary_y": has_secondary}]])
     hover_fmt = "%{x|%A, %b %d, %Y}"
 
-    # EJE 1
+    # Trazado Eje 1
     try:
         s1 = df[col1].dropna()
         if not s1.empty:
             last_v1 = s1.iloc[-1]
-            
             if config_format["type"] == "Línea":
                 fig.add_trace(go.Scatter(
                     x=s1.index, y=s1, name=col1, 
                     line=dict(color=COLOR_Y1, width=config_format["width"]), 
-                    mode='lines',
-                    hovertemplate=f"<b>{col1}</b><br>{hover_fmt}: %{{y:,.2f}}{suffix1}<extra></extra>"
+                    mode='lines', hovertemplate=f"<b>{col1}</b><br>{hover_fmt}: %{{y:,.2f}}{suffix1}<extra></extra>"
                 ), secondary_y=False)
             elif config_format["type"] == "Barra":
                  fig.add_trace(go.Bar(
-                    x=s1.index, y=s1, name=col1, 
-                    marker=dict(color=COLOR_Y1),
+                    x=s1.index, y=s1, name=col1, marker=dict(color=COLOR_Y1),
                     hovertemplate=f"<b>{col1}</b><br>{hover_fmt}: %{{y:,.2f}}{suffix1}<extra></extra>"
                 ), secondary_y=False)
             elif config_format["type"] == "Área":
                  fig.add_trace(go.Scatter(
                     x=s1.index, y=s1, name=col1, 
-                    line=dict(color=COLOR_Y1, width=config_format["width"]), 
-                    fill='tozeroy', mode='lines',
+                    line=dict(color=COLOR_Y1, width=config_format["width"]), fill='tozeroy', mode='lines',
                     hovertemplate=f"<b>{col1}</b><br>{hover_fmt}: %{{y:,.2f}}{suffix1}<extra></extra>"
                 ), secondary_y=False)
             
@@ -182,12 +171,11 @@ def create_pro_chart(df, col1, col2=None, invert_y2=False, logo_data="", config_
             fig.add_annotation(
                 x=s1.index[-1], y=last_v1, text=f" {txt_val}",
                 xref="x", yref="y1", xanchor="left", showarrow=False,
-                font=dict(color="white", size=11, weight="bold"),
-                bgcolor=COLOR_Y1, borderpad=4, opacity=0.9
+                font=dict(color="white", size=11, weight="bold"), bgcolor=COLOR_Y1, borderpad=4, opacity=0.9
             )
     except: pass
 
-    # EJE 2
+    # Trazado Eje 2
     if has_secondary:
         suffix2, fmt2 = get_format_settings(col2)
         try:
@@ -196,8 +184,7 @@ def create_pro_chart(df, col1, col2=None, invert_y2=False, logo_data="", config_
                 last_v2 = s2.iloc[-1]
                 fig.add_trace(go.Scatter(
                     x=s2.index, y=s2, name=col2, 
-                    line=dict(color=COLOR_Y2, width=2, dash='dash'), 
-                    mode='lines',
+                    line=dict(color=COLOR_Y2, width=2, dash='dash'), mode='lines',
                     hovertemplate=f"<b>{col2}</b><br>{hover_fmt}: %{{y:,.2f}}{suffix2}<extra></extra>"
                 ), secondary_y=True)
                 
@@ -205,40 +192,39 @@ def create_pro_chart(df, col1, col2=None, invert_y2=False, logo_data="", config_
                 fig.add_annotation(
                     x=s2.index[-1], y=last_v2, text=f" {txt_val2}",
                     xref="x", yref="y2", xanchor="left", showarrow=False,
-                    font=dict(color="white", size=11, weight="bold"),
-                    bgcolor=COLOR_Y2, borderpad=4, opacity=0.9
+                    font=dict(color="white", size=11, weight="bold"), bgcolor=COLOR_Y2, borderpad=4, opacity=0.9
                 )
         except: pass
 
     title_clean_1 = f"{col1} EE.UU" if "Desempleo" in col1 else col1
     if col1 not in INDICATOR_CONFIG: title_clean_1 = col1 
-    
     title_text = f"<b>{title_clean_1}</b>"
     if has_secondary: title_text += f" vs <b>{col2}</b>"
 
     fig.update_layout(
         title=dict(text=title_text, x=0.5, y=0.98, xanchor='center', font=dict(family="Arial", size=20, color="black")),
         plot_bgcolor="white", paper_bgcolor="white", height=650,
-        margin=dict(t=120, r=80, l=80, b=100),
-        showlegend=True,
+        margin=dict(t=120, r=80, l=80, b=100), showlegend=True,
         legend=dict(orientation="h", y=1.15, x=0, xanchor='left', bgcolor="rgba(0,0,0,0)", font=dict(color="#333")),
         images=[dict(source=logo_data, xref="paper", yref="paper", x=1, y=1.22, sizex=0.12, sizey=0.12, xanchor="right", yanchor="top")]
     )
 
-    # 2. DEFINICIÓN DEL RANGO INICIAL EXACTO (1 AÑO)
-    # Esto evita que Plotly muestre 2026. Forzamos la vista a [Hoy-365, Hoy]
-    fin_rango = datetime.datetime.now()
-    inicio_rango = fin_rango - datetime.timedelta(days=365)
+    # 2. DEFINIR RANGO POR DEFECTO PARA QUE SE VEA 1Y AL CARGAR
+    # Esto soluciona el "glitch" visual. Forzamos la vista a [Hoy-365, Hoy]
+    inicio_1y = hoy_real - datetime.timedelta(days=365)
 
-    # BOTONES DE RANGO (CON FIX DE FECHAS)
+    # --- BOTONES INTERNOS (COMO PEDISTE) ---
     fig.update_xaxes(
-        range=[inicio_rango, fin_rango], # <--- AQUÍ ESTÁ EL ARREGLO VISUAL INICIAL
+        # Forzar rango inicial estricto
+        range=[inicio_1y, hoy_real], 
         showgrid=False, linecolor="#333", linewidth=2, tickfont=dict(color="#333", size=12), ticks="outside",
         rangeselector=dict(
             buttons=list([
+                # Usamos 'day' y 365 para mayor precisión que 'year'
                 dict(count=1, label="1M", step="month", stepmode="backward"),
-                dict(count=365, label="1Y", step="day", stepmode="backward"), # Usamos días para precisión
-                dict(count=365*5, label="5Y", step="day", stepmode="backward"),
+                dict(count=365, label="1Y", step="day", stepmode="backward"),
+                dict(count=5, label="5Y", step="year", stepmode="backward"),
+                dict(count=10, label="10Y", step="year", stepmode="backward"),
                 dict(step="all", label="Max")
             ]),
             bgcolor="white", activecolor="#e6e6e6", x=0, y=1, xanchor='left', yanchor='bottom',
@@ -247,20 +233,15 @@ def create_pro_chart(df, col1, col2=None, invert_y2=False, logo_data="", config_
     )
     
     fig.update_yaxes(
-        title=f"<b>{col1}</b>", title_font=dict(color=COLOR_Y1), 
-        showgrid=True, gridcolor="#f0f0f0", gridwidth=1, 
-        linecolor="white", tickfont=dict(color=COLOR_Y1, weight="bold"),
-        ticksuffix=suffix1, tickformat=fmt1,
-        zeroline=False, secondary_y=False
+        title=f"<b>{col1}</b>", title_font=dict(color=COLOR_Y1), showgrid=True, gridcolor="#f0f0f0", gridwidth=1, 
+        linecolor="white", tickfont=dict(color=COLOR_Y1, weight="bold"), ticksuffix=suffix1, tickformat=fmt1, zeroline=False, secondary_y=False
     )
     
     if has_secondary:
         y2_title = f"<b>{col2} - Invertido</b>" if invert_y2 else f"<b>{col2}</b>"
         fig.update_yaxes(
-            title=y2_title, title_font=dict(color=COLOR_Y2), 
-            showgrid=False, tickfont=dict(color=COLOR_Y2),
-            ticksuffix=suffix2, tickformat=fmt2,
-            autorange="reversed" if invert_y2 else True, secondary_y=True
+            title=y2_title, title_font=dict(color=COLOR_Y2), showgrid=False, tickfont=dict(color=COLOR_Y2),
+            ticksuffix=suffix2, tickformat=fmt2, autorange="reversed" if invert_y2 else True, secondary_y=True
         )
 
     if config_format["rec"]:
@@ -275,13 +256,10 @@ def create_pro_chart(df, col1, col2=None, invert_y2=False, logo_data="", config_
                     if e_dt > df_start and s_dt < df_end:
                         v_s = max(s_dt, df_start)
                         v_e = min(e_dt, df_end)
-                        fig.add_vrect(
-                            x0=v_s, x1=v_e, 
-                            fillcolor="#e6e6e6", opacity=0.5, layer="below", line_width=0,
-                            yref="paper", y0=0, y1=1
-                        )
+                        fig.add_vrect(x0=v_s, x1=v_e, fillcolor="#e6e6e6", opacity=0.5, layer="below", line_width=0, yref="paper", y0=0, y1=1)
                 except: pass
         
+    # Metadata footer
     meta1 = INDICATOR_CONFIG.get(col1, {})
     fred_id1 = meta1.get("fred_id", "External Data" if col1 not in INDICATOR_CONFIG else "N/A")
     db_text = f"{fred_id1}" if col1 in INDICATOR_CONFIG else "Proprietary Data"
@@ -290,7 +268,6 @@ def create_pro_chart(df, col1, col2=None, invert_y2=False, logo_data="", config_
         meta2 = INDICATOR_CONFIG.get(col2, {})
         fred_id2 = meta2.get("fred_id", "External Data" if col2 not in INDICATOR_CONFIG else "N/A")
         if fred_id2 != fred_id1: db_text += f", {fred_id2}"
-    
     if "UNRATE" in db_text or "DGS" in db_text: db_text = "FRED " + db_text
 
     fig.add_annotation(x=0, y=-0.14, text=f"Database: {db_text}", xref="paper", yref="paper", showarrow=False, font=dict(size=11, color="gray"), xanchor="left")
@@ -301,17 +278,16 @@ def create_pro_chart(df, col1, col2=None, invert_y2=False, logo_data="", config_
 # --- 7. INTERFAZ PRINCIPAL ---
 st.title("XTB Research Macro Dashboard")
 
-# --- SIDEBAR COLAPSABLE ---
+# --- SIDEBAR: ORDEN SOLICITADO ---
 with st.sidebar:
     st.header("📂 Datos Propios")
-    # RESTAURADO: El buzón de Excel vuelve a estar aquí arriba, visible siempre
+    # 1. BUZÓN EXCEL (Aquí arriba, siempre visible)
     uploaded_file = st.file_uploader("Subir Excel (.xlsx)", type=["xlsx"])
     
     st.divider()
     
     st.header("🛠️ Configuración & Edición")
-    
-    # Panel de Edición (Tabs)
+    # 2. PANEL DE EDICIÓN (Colapsable/Tabs)
     tab_edit, tab_add, tab_fmt = st.tabs(["EDIT LINE", "ADD LINE", "FORMAT"])
     
     with tab_edit:
@@ -379,23 +355,21 @@ if not df_full.empty:
                             st.info(response.text)
                         except: st.error("Error IA")
 
-    # --- ZONA PRINCIPAL (GRÁFICO GIGANTE) ---
+    # --- ZONA PRINCIPAL (SOLO GRÁFICO GIGANTE) ---
+    # El gráfico se crea con la data completa, pero el 'range' inicial está forzado a 1 año atrás
     fig = create_pro_chart(df_full, y1_sel, y2_sel, invert_y2, logo_b64, config_visual)
     st.plotly_chart(fig, use_container_width=True)
     
-    # --- TABLA HISTÓRICA (LIMPIA Y CONDICIONAL) ---
+    # --- TABLA HISTÓRICA ---
     st.divider()
 
     meta_info = INDICATOR_CONFIG.get(y1_sel, {"type": "market"}) 
-    
-    # Si viene del Excel del usuario o es tipo 'macro', mostramos tabla
     is_user_data = y1_sel not in INDICATOR_CONFIG
     is_macro_data = (meta_info.get("type") == "macro")
     show_full_table = is_macro_data or is_user_data
 
     if show_full_table:
         st.subheader(f"📅 Histórico: {y1_sel}")
-        
         start_dt_table = pd.to_datetime("2020-01-01")
         df_table_view = df_full[df_full.index >= start_dt_table]
         
@@ -407,13 +381,11 @@ if not df_full.empty:
         
         df_cal['Mes_Ref'] = df_cal['Fecha_Base'].dt.month
         df_cal['Referencia'] = df_cal['Mes_Ref'].apply(get_month_name) + " " + df_cal['Fecha_Base'].dt.year.astype(str)
-        
         df_cal['Fecha_Pub'] = df_cal['Fecha_Base'] + pd.DateOffset(months=1)
         df_cal['Mes_Pub'] = df_cal['Fecha_Pub'].dt.month
         df_cal['Publicación (Est.)'] = df_cal['Mes_Pub'].apply(get_month_name) + " " + df_cal['Fecha_Pub'].dt.year.astype(str)
         
         df_cal = df_cal.rename(columns={y1_sel: 'Actual'})
-        
         is_pct_table = meta_info.get("is_percent", False)
         def fmt_num_table(x):
             if pd.isna(x): return ""
@@ -426,9 +398,7 @@ if not df_full.empty:
         df_display = df_cal[['Referencia', 'Publicación (Est.)', 'Actual', 'Anterior']].dropna(subset=['Anterior'])
 
         st.dataframe(
-            df_display,
-            hide_index=True,
-            use_container_width=True,
+            df_display, hide_index=True, use_container_width=True,
             column_config={
                 "Referencia": st.column_config.TextColumn("Referencia", width="medium"),
                 "Publicación (Est.)": st.column_config.TextColumn("Publicación", width="medium"),
