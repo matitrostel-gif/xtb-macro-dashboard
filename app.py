@@ -91,7 +91,6 @@ def get_format_settings(indicator_name):
     else: return "", ",.2f"
 
 # --- 5. MOTOR DE DATOS ---
-# CACHÉ REDUCIDO A 60 SEGUNDOS
 @st.cache_data(ttl=60) 
 def get_all_macro_data_long_history():
     start_date = "1970-01-01" 
@@ -125,6 +124,10 @@ def create_pro_chart(df, col1, col2=None, invert_y2=False, logo_data=""):
     has_secondary = col2 is not None and col2 != "Ninguno"
     
     suffix1, fmt1 = get_format_settings(col1)
+    
+    # --- CORRECCIÓN 1: Asegurar que el DF no tenga fechas futuras por error ---
+    hoy_real = datetime.datetime.now()
+    df = df[df.index <= hoy_real]
     
     fig = make_subplots(specs=[[{"secondary_y": has_secondary}]])
 
@@ -187,21 +190,29 @@ def create_pro_chart(df, col1, col2=None, invert_y2=False, logo_data=""):
         images=[dict(source=logo_data, xref="paper", yref="paper", x=1, y=1.22, sizex=0.12, sizey=0.12, xanchor="right", yanchor="top")]
     )
 
-    # --- BOTONES DE RANGO DE TIEMPO CON COLOR ---
+    # --- CALCULAR EL RANGO INICIAL EXACTO (1 AÑO ATRÁS -> HOY) ---
+    # Esto asegura que al cargar la página NO aparezca 2026/2027
+    fecha_fin = df.index.max()
+    if pd.isna(fecha_fin): fecha_fin = datetime.datetime.now()
+    fecha_inicio_1y = fecha_fin - datetime.timedelta(days=365) # 365 días exactos
+
     fig.update_xaxes(
+        # --- CORRECCIÓN 2: Fijar el rango inicial explícitamente ---
+        range=[fecha_inicio_1y, fecha_fin], 
         showgrid=False, linecolor="#333", linewidth=2, tickfont=dict(color="#333", size=12), ticks="outside",
         rangeselector=dict(
             buttons=list([
-                dict(count=1, label="1Y", step="year", stepmode="backward"),
-                dict(count=5, label="5Y", step="year", stepmode="backward"),
-                dict(count=10, label="10Y", step="year", stepmode="backward"),
+                # --- CORRECCIÓN 3: Usar 'day' para precisión exacta de 365 días ---
+                dict(count=365, label="1Y", step="day", stepmode="backward"),
+                dict(count=365*3, label="3Y", step="day", stepmode="backward"),
+                dict(count=365*5, label="5Y", step="day", stepmode="backward"),
+                dict(count=365*10, label="10Y", step="day", stepmode="backward"),
                 dict(step="all", label="Max")
             ]),
             bgcolor="white",
             activecolor="#e6e6e6",
             x=0, y=1,
             xanchor='left', yanchor='bottom',
-            # --- AQUÍ ESTÁ EL CAMBIO DE COLOR ---
             font=dict(size=11, color="#333333") 
         )
     )
