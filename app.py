@@ -99,7 +99,7 @@ def get_format_settings(indicator_name):
     if is_pct: return "%", ".2f"
     else: return "", ",.2f"
 
-# --- 5. MOTOR DE DATOS (Estable) ---
+# --- 5. MOTOR DE DATOS ---
 @st.cache_data(ttl=60) 
 def get_all_macro_data_long_history():
     start_date = "1970-01-01" 
@@ -126,7 +126,7 @@ def get_all_macro_data_long_history():
             
     return df_master
 
-# --- 6. FÁBRICA DE GRÁFICOS (CON ARREGLO DE FECHAS) ---
+# --- 6. FÁBRICA DE GRÁFICOS (FIX FECHAS APLICADO) ---
 def create_pro_chart(df, col1, col2=None, invert_y2=False, logo_data="", config_format=None):
     
     if config_format is None:
@@ -138,7 +138,6 @@ def create_pro_chart(df, col1, col2=None, invert_y2=False, logo_data="", config_
     suffix1, fmt1 = get_format_settings(col1)
     
     # 1. FILTRADO ESTRICTO (SOLUCIÓN GLITCH FECHAS)
-    # Cortamos todo lo que sea mayor a hoy
     hoy_real = datetime.datetime.now()
     if not df.empty:
         df = df[df.index <= hoy_real] 
@@ -210,12 +209,11 @@ def create_pro_chart(df, col1, col2=None, invert_y2=False, logo_data="", config_
         images=[dict(source=logo_data, xref="paper", yref="paper", x=1, y=1.22, sizex=0.12, sizey=0.12, xanchor="right", yanchor="top")]
     )
 
-    # 2. DEFINIR RANGO VISUAL INICIAL (SOLUCIÓN DEFINITIVA)
-    # Esto asegura que al cargar se vea [Hoy - 1 año, Hoy] sin huecos.
+    # 2. DEFINIR RANGO VISUAL INICIAL
     inicio_1y = hoy_real - datetime.timedelta(days=365)
 
     fig.update_xaxes(
-        range=[inicio_1y, hoy_real],  # <--- RANGO FIJADO
+        range=[inicio_1y, hoy_real], 
         showgrid=False, linecolor="#333", linewidth=2, tickfont=dict(color="#333", size=12), ticks="outside",
         rangeselector=dict(
             buttons=list([
@@ -275,7 +273,7 @@ def create_pro_chart(df, col1, col2=None, invert_y2=False, logo_data="", config_
 # --- 7. INTERFAZ PRINCIPAL ---
 st.title("XTB Research Macro Dashboard")
 
-# --- SIDEBAR LIMPIO (SIN FUNCIONES COMPLEJAS DE FRED) ---
+# --- SIDEBAR LIMPIO ---
 with st.sidebar:
     st.header("📂 Datos Propios")
     uploaded_file = st.file_uploader("Subir Excel (.xlsx)", type=["xlsx"])
@@ -284,7 +282,6 @@ with st.sidebar:
     
     st.header("🛠️ Configuración & Edición")
     
-    # PESTAÑAS SIMPLIFICADAS (Solo Selectores y Estilo Básico)
     tab_edit, tab_add, tab_fmt = st.tabs(["EDIT LINE", "ADD LINE", "FORMAT"])
     
     with tab_edit:
@@ -384,10 +381,20 @@ if not df_full.empty:
         
         df_cal = df_cal.rename(columns={y1_sel: 'Actual'})
         is_pct_table = meta_info.get("is_percent", False)
+        
+        # --- FUNCIÓN DE FORMATO CORREGIDA ---
         def fmt_num_table(x):
             if pd.isna(x): return ""
-            if is_pct_table: return f"{x:.4f}%" 
-            else: return f"{x:,.4f}"
+            # Si es porcentaje, usaremos 2 decimales y quitaremos el .00 si existe para limpiar
+            if is_pct_table:
+                txt = f"{x:.2f}"
+                if txt.endswith(".00"): txt = txt[:-3]
+                return f"{txt}%"
+            else:
+                # Si es número normal, 2 decimales limpios
+                txt = f"{x:,.2f}"
+                if txt.endswith(".00"): txt = txt[:-3]
+                return txt
 
         df_cal['Actual'] = df_cal['Actual'].apply(fmt_num_table)
         df_cal['Anterior'] = df_cal['Anterior'].apply(fmt_num_table)
