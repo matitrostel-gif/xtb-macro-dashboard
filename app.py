@@ -26,7 +26,7 @@ st.markdown("""
     div[data-testid="stCheckbox"] { margin-top: 5px; }
     [data-testid="stDataFrame"] { font-family: 'Arial', sans-serif; }
     
-    /* El File Uploader (Buzón) con estilo */
+    /* File Uploader (Buzón) */
     [data-testid="stFileUploader"] {
         padding: 10px;
         border: 1px dashed #4a4a4a;
@@ -98,7 +98,7 @@ def get_format_settings(indicator_name):
     if is_pct: return "%", ".2f"
     else: return "", ",.2f"
 
-# --- 5. MOTOR DE DATOS ---
+# --- 5. MOTOR DE DATOS (ESTABLE) ---
 @st.cache_data(ttl=60) 
 def get_all_macro_data_long_history():
     start_date = "1970-01-01" 
@@ -125,7 +125,7 @@ def get_all_macro_data_long_history():
             
     return df_master
 
-# --- 6. FÁBRICA DE GRÁFICOS (FIX 2026/2027 & BOTONES INTERNOS) ---
+# --- 6. FÁBRICA DE GRÁFICOS (FIX 2026/2027) ---
 def create_pro_chart(df, col1, col2=None, invert_y2=False, logo_data="", config_format=None):
     
     if config_format is None:
@@ -136,15 +136,14 @@ def create_pro_chart(df, col1, col2=None, invert_y2=False, logo_data="", config_
     has_secondary = col2 is not None and col2 != "Ninguno"
     suffix1, fmt1 = get_format_settings(col1)
     
-    # 1. FILTRADO ESTRICTO DE FECHAS (CORTAFUEGOS DE DATOS FUTUROS)
-    # Esto elimina cualquier dato "fantasma" que Plotly pudiera interpretar como futuro
+    # 1. FILTRADO ESTRICTO DE FECHAS (CORTAFUEGOS)
     hoy_real = datetime.datetime.now()
-    df = df[df.index <= hoy_real] 
+    if not df.empty:
+        df = df[df.index <= hoy_real] 
     
     fig = make_subplots(specs=[[{"secondary_y": has_secondary}]])
     hover_fmt = "%{x|%A, %b %d, %Y}"
 
-    # Trazado Eje 1
     try:
         s1 = df[col1].dropna()
         if not s1.empty:
@@ -175,7 +174,6 @@ def create_pro_chart(df, col1, col2=None, invert_y2=False, logo_data="", config_
             )
     except: pass
 
-    # Trazado Eje 2
     if has_secondary:
         suffix2, fmt2 = get_format_settings(col2)
         try:
@@ -209,20 +207,16 @@ def create_pro_chart(df, col1, col2=None, invert_y2=False, logo_data="", config_
         images=[dict(source=logo_data, xref="paper", yref="paper", x=1, y=1.22, sizex=0.12, sizey=0.12, xanchor="right", yanchor="top")]
     )
 
-    # 2. DEFINIR RANGO POR DEFECTO PARA QUE SE VEA 1Y AL CARGAR
-    # Esto soluciona el "glitch" visual. Forzamos la vista a [Hoy-365, Hoy]
+    # 2. DEFINIR RANGO INICIAL
     inicio_1y = hoy_real - datetime.timedelta(days=365)
 
-    # --- BOTONES INTERNOS (COMO PEDISTE) ---
     fig.update_xaxes(
-        # Forzar rango inicial estricto
         range=[inicio_1y, hoy_real], 
         showgrid=False, linecolor="#333", linewidth=2, tickfont=dict(color="#333", size=12), ticks="outside",
         rangeselector=dict(
             buttons=list([
-                # Usamos 'day' y 365 para mayor precisión que 'year'
                 dict(count=1, label="1M", step="month", stepmode="backward"),
-                dict(count=365, label="1Y", step="day", stepmode="backward"),
+                dict(count=365, label="1Y", step="day", stepmode="backward"), 
                 dict(count=5, label="5Y", step="year", stepmode="backward"),
                 dict(count=10, label="10Y", step="year", stepmode="backward"),
                 dict(step="all", label="Max")
@@ -259,7 +253,6 @@ def create_pro_chart(df, col1, col2=None, invert_y2=False, logo_data="", config_
                         fig.add_vrect(x0=v_s, x1=v_e, fillcolor="#e6e6e6", opacity=0.5, layer="below", line_width=0, yref="paper", y0=0, y1=1)
                 except: pass
         
-    # Metadata footer
     meta1 = INDICATOR_CONFIG.get(col1, {})
     fred_id1 = meta1.get("fred_id", "External Data" if col1 not in INDICATOR_CONFIG else "N/A")
     db_text = f"{fred_id1}" if col1 in INDICATOR_CONFIG else "Proprietary Data"
@@ -278,16 +271,16 @@ def create_pro_chart(df, col1, col2=None, invert_y2=False, logo_data="", config_
 # --- 7. INTERFAZ PRINCIPAL ---
 st.title("XTB Research Macro Dashboard")
 
-# --- SIDEBAR: ORDEN SOLICITADO ---
+# --- SIDEBAR COLAPSABLE ---
 with st.sidebar:
     st.header("📂 Datos Propios")
-    # 1. BUZÓN EXCEL (Aquí arriba, siempre visible)
     uploaded_file = st.file_uploader("Subir Excel (.xlsx)", type=["xlsx"])
     
     st.divider()
     
     st.header("🛠️ Configuración & Edición")
-    # 2. PANEL DE EDICIÓN (Colapsable/Tabs)
+    
+    # Panel de Edición (Tabs Simples)
     tab_edit, tab_add, tab_fmt = st.tabs(["EDIT LINE", "ADD LINE", "FORMAT"])
     
     with tab_edit:
@@ -355,8 +348,7 @@ if not df_full.empty:
                             st.info(response.text)
                         except: st.error("Error IA")
 
-    # --- ZONA PRINCIPAL (SOLO GRÁFICO GIGANTE) ---
-    # El gráfico se crea con la data completa, pero el 'range' inicial está forzado a 1 año atrás
+    # --- ZONA PRINCIPAL ---
     fig = create_pro_chart(df_full, y1_sel, y2_sel, invert_y2, logo_b64, config_visual)
     st.plotly_chart(fig, use_container_width=True)
     
@@ -381,6 +373,7 @@ if not df_full.empty:
         
         df_cal['Mes_Ref'] = df_cal['Fecha_Base'].dt.month
         df_cal['Referencia'] = df_cal['Mes_Ref'].apply(get_month_name) + " " + df_cal['Fecha_Base'].dt.year.astype(str)
+        
         df_cal['Fecha_Pub'] = df_cal['Fecha_Base'] + pd.DateOffset(months=1)
         df_cal['Mes_Pub'] = df_cal['Fecha_Pub'].dt.month
         df_cal['Publicación (Est.)'] = df_cal['Mes_Pub'].apply(get_month_name) + " " + df_cal['Fecha_Pub'].dt.year.astype(str)
