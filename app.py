@@ -54,20 +54,19 @@ FRED_API_KEY = "a913b86d145620f86b690a7e4fe4538e"
 
 # --- 3. CONFIGURACIÓN MAESTRA ---
 INDICATOR_CONFIG = {
-    "Tasa Desempleo": {"fred_id": "UNRATE", "source": "U.S. BLS", "type": "macro", "is_percent": True, "units": "lin"},
-    "Tasa Participación Laboral": {"fred_id": "CIVPART", "source": "U.S. BLS", "type": "macro", "is_percent": True, "units": "lin"},
-    "Nóminas NFP (YoY%)": {"fred_id": "PAYEMS", "source": "U.S. BLS", "type": "macro", "is_percent": True, "units": "pc1"},
-    "Initial Jobless Claims (YoY%)": {"fred_id": "ICSA", "source": "U.S. ETA", "type": "macro", "is_percent": True, "units": "pc1"},
-    "PCE Price Index (YoY%)": {"fred_id": "PCEPI", "source": "U.S. BEA", "type": "macro", "is_percent": True, "units": "pc1"},
-    "CPI Core (YoY%)": {"fred_id": "CPIAUCSL", "source": "U.S. BLS", "type": "macro", "is_percent": True, "units": "pc1"},
-    "Liquidez FED (YoY%)": {"fred_id": "WALCL", "source": "Federal Reserve", "type": "macro", "is_percent": True, "units": "pc1"},
-    "Oferta Monetaria M2 (YoY%)": {"fred_id": "M2SL", "source": "Federal Reserve", "type": "macro", "is_percent": True, "units": "pc1"},
-    "Producción Industrial (YoY%)": {"fred_id": "INDPRO", "source": "Federal Reserve", "type": "macro", "is_percent": True, "units": "pc1"},
-    "Bono US 10Y": {"fred_id": "DGS10", "source": "Board of Governors", "type": "market", "is_percent": True, "units": "lin"},
-    "Bono US 2Y": {"fred_id": "DGS2", "source": "Board of Governors", "type": "market", "is_percent": True, "units": "lin"},
-    "Curva Tipos (10Y-2Y)": {"fred_id": "DGS10, DGS2", "source": "Board of Governors", "type": "market", "is_percent": True, "units": "lin"},
-    "Tasa FED": {"fred_id": "FEDFUNDS", "source": "Board of Governors", "type": "market", "is_percent": True, "units": "lin"},
-    "Volatilidad VIX": {"fred_id": "VIXCLS", "source": "CBOE", "type": "market", "is_percent": False, "units": "lin"},
+    "Tasa Desempleo": {"fred_id": "UNRATE", "type": "macro", "is_percent": True, "units": "lin"},
+    "Tasa Participación": {"fred_id": "CIVPART", "type": "macro", "is_percent": True, "units": "lin"},
+    "Nóminas NFP (YoY%)": {"fred_id": "PAYEMS", "type": "macro", "is_percent": True, "units": "pc1"},
+    "Initial Claims": {"fred_id": "ICSA", "type": "macro", "is_percent": True, "units": "pc1"},
+    "PCE Price Index": {"fred_id": "PCEPI", "type": "macro", "is_percent": True, "units": "pc1"},
+    "CPI Core": {"fred_id": "CPIAUCSL", "type": "macro", "is_percent": True, "units": "pc1"},
+    "Liquidez FED": {"fred_id": "WALCL", "type": "macro", "is_percent": True, "units": "pc1"},
+    "M2 Money Supply": {"fred_id": "M2SL", "type": "macro", "is_percent": True, "units": "pc1"},
+    "Producción Ind.": {"fred_id": "INDPRO", "type": "macro", "is_percent": True, "units": "pc1"},
+    "Bono US 10Y": {"fred_id": "DGS10", "type": "market", "is_percent": True, "units": "lin"},
+    "Bono US 2Y": {"fred_id": "DGS2", "type": "market", "is_percent": True, "units": "lin"},
+    "Tasa FED": {"fred_id": "FEDFUNDS", "type": "market", "is_percent": True, "units": "lin"},
+    "Volatilidad VIX": {"fred_id": "VIXCLS", "type": "market", "is_percent": False, "units": "lin"},
 }
 
 # --- 4. UTILIDADES ---
@@ -82,6 +81,8 @@ def get_local_logo_base64():
                     return f"data:image/{'png' if 'png' in filename else 'jpeg'};base64,{base64.b64encode(f.read()).decode()}"
             except: continue
     return ""
+
+logo_b64 = get_local_logo_base64()
 
 def get_month_name(month_num):
     meses = {1: 'Ene', 2: 'Feb', 3: 'Mar', 4: 'Abr', 5: 'May', 6: 'Jun', 
@@ -110,7 +111,8 @@ def get_all_macro_data_long_history():
         series_to_fetch = {k: v for k, v in INDICATOR_CONFIG.items() if "," not in v["fred_id"]}
         for name, config in series_to_fetch.items():
             try:
-                series = fred.get_series(config["fred_id"], observation_start=start_date, units=config["units"])
+                units = config.get("units", "lin")
+                series = fred.get_series(config["fred_id"], observation_start=start_date, units=units)
                 temp = series.to_frame(name=name)
                 if df_master.empty: df_master = temp
                 else: df_master = df_master.join(temp, how='outer')
@@ -119,9 +121,6 @@ def get_all_macro_data_long_history():
     if not df_master.empty:
         df_master.index = pd.to_datetime(df_master.index)
         df_calc = df_master.ffill() 
-        if 'Bono US 10Y' in df_calc.columns and 'Bono US 2Y' in df_calc.columns:
-            df_master['Curva Tipos (10Y-2Y)'] = df_calc['Bono US 10Y'] - df_calc['Bono US 2Y']
-            
     return df_master
 
 # --- 6. FÁBRICA DE GRÁFICOS ---
@@ -151,27 +150,14 @@ def create_pro_chart(df, col1, col2=None, invert_y2=False, logo_data="", config_
             last_v1 = s1.iloc[-1]
             
             if config_format["type"] == "Línea":
-                fig.add_trace(go.Scatter(
-                    x=s1.index, y=s1, name=col1, line=dict(color=COLOR_Y1, width=config_format["width"]), 
-                    mode='lines', hovertemplate=f"<b>{col1}</b><br>{hover_fmt}: %{{y:,.2f}}{suffix1}<extra></extra>"
-                ), secondary_y=False)
+                fig.add_trace(go.Scatter(x=s1.index, y=s1, name=col1, line=dict(color=COLOR_Y1, width=config_format["width"]), mode='lines', hovertemplate=f"<b>{col1}</b><br>{hover_fmt}: %{{y:,.2f}}{suffix1}<extra></extra>"), secondary_y=False)
             elif config_format["type"] == "Barra":
-                 fig.add_trace(go.Bar(
-                    x=s1.index, y=s1, name=col1, marker=dict(color=COLOR_Y1),
-                    hovertemplate=f"<b>{col1}</b><br>{hover_fmt}: %{{y:,.2f}}{suffix1}<extra></extra>"
-                ), secondary_y=False)
+                 fig.add_trace(go.Bar(x=s1.index, y=s1, name=col1, marker=dict(color=COLOR_Y1), hovertemplate=f"<b>{col1}</b><br>{hover_fmt}: %{{y:,.2f}}{suffix1}<extra></extra>"), secondary_y=False)
             elif config_format["type"] == "Área":
-                 fig.add_trace(go.Scatter(
-                    x=s1.index, y=s1, name=col1, line=dict(color=COLOR_Y1, width=config_format["width"]), 
-                    fill='tozeroy', mode='lines', hovertemplate=f"<b>{col1}</b><br>{hover_fmt}: %{{y:,.2f}}{suffix1}<extra></extra>"
-                ), secondary_y=False)
+                 fig.add_trace(go.Scatter(x=s1.index, y=s1, name=col1, line=dict(color=COLOR_Y1, width=config_format["width"]), fill='tozeroy', mode='lines', hovertemplate=f"<b>{col1}</b><br>{hover_fmt}: %{{y:,.2f}}{suffix1}<extra></extra>"), secondary_y=False)
             
             txt_val = f"{last_v1:,.2f}{suffix1}" if suffix1 == "%" else f"{last_v1:,.2f}"
-            fig.add_annotation(
-                x=s1.index[-1], y=last_v1, text=f" {txt_val}",
-                xref="x", yref="y1", xanchor="left", showarrow=False,
-                font=dict(color="white", size=11, weight="bold"), bgcolor=COLOR_Y1, borderpad=4, opacity=0.9
-            )
+            fig.add_annotation(x=s1.index[-1], y=last_v1, text=f" {txt_val}", xref="x", yref="y1", xanchor="left", showarrow=False, font=dict(color="white", size=11, weight="bold"), bgcolor=COLOR_Y1, borderpad=4, opacity=0.9)
     except: pass
 
     # EJE 2
@@ -181,20 +167,12 @@ def create_pro_chart(df, col1, col2=None, invert_y2=False, logo_data="", config_
             s2 = df[col2].dropna()
             if not s2.empty:
                 start_2 = s2.index[0]
-                if first_valid_date is None or start_2 < first_valid_date:
-                    first_valid_date = start_2
+                if first_valid_date is None or start_2 < first_valid_date: first_valid_date = start_2
                 last_v2 = s2.iloc[-1]
-                fig.add_trace(go.Scatter(
-                    x=s2.index, y=s2, name=col2, line=dict(color=COLOR_Y2, width=2, dash='dash'), 
-                    mode='lines', hovertemplate=f"<b>{col2}</b><br>{hover_fmt}: %{{y:,.2f}}{suffix2}<extra></extra>"
-                ), secondary_y=True)
+                fig.add_trace(go.Scatter(x=s2.index, y=s2, name=col2, line=dict(color=COLOR_Y2, width=2, dash='dash'), mode='lines', hovertemplate=f"<b>{col2}</b><br>{hover_fmt}: %{{y:,.2f}}{suffix2}<extra></extra>"), secondary_y=True)
                 
                 txt_val2 = f"{last_v2:,.2f}{suffix2}" if suffix2 == "%" else f"{last_v2:,.2f}"
-                fig.add_annotation(
-                    x=s2.index[-1], y=last_v2, text=f" {txt_val2}",
-                    xref="x", yref="y2", xanchor="left", showarrow=False,
-                    font=dict(color="white", size=11, weight="bold"), bgcolor=COLOR_Y2, borderpad=4, opacity=0.9
-                )
+                fig.add_annotation(x=s2.index[-1], y=last_v2, text=f" {txt_val2}", xref="x", yref="y2", xanchor="left", showarrow=False, font=dict(color="white", size=11, weight="bold"), bgcolor=COLOR_Y2, borderpad=4, opacity=0.9)
         except: pass
 
     title_text = f"<b>{col1}</b>"
@@ -226,25 +204,14 @@ def create_pro_chart(df, col1, col2=None, invert_y2=False, logo_data="", config_
         )
     )
     
-    fig.update_yaxes(
-        title=f"<b>{col1}</b>", title_font=dict(color=COLOR_Y1), showgrid=True, gridcolor="#f0f0f0", gridwidth=1, 
-        linecolor="white", tickfont=dict(color=COLOR_Y1, weight="bold"), ticksuffix=suffix1, tickformat=fmt1, zeroline=False, secondary_y=False
-    )
+    fig.update_yaxes(title=f"<b>{col1}</b>", title_font=dict(color=COLOR_Y1), showgrid=True, gridcolor="#f0f0f0", gridwidth=1, linecolor="white", tickfont=dict(color=COLOR_Y1, weight="bold"), ticksuffix=suffix1, tickformat=fmt1, zeroline=False, secondary_y=False)
     
     if has_secondary:
         y2_title = f"<b>{col2} - Invertido</b>" if invert_y2 else f"<b>{col2}</b>"
-        fig.update_yaxes(
-            title=y2_title, title_font=dict(color=COLOR_Y2), showgrid=False, tickfont=dict(color=COLOR_Y2),
-            ticksuffix=suffix2, tickformat=fmt2, autorange="reversed" if invert_y2 else True, secondary_y=True
-        )
+        fig.update_yaxes(title=y2_title, title_font=dict(color=COLOR_Y2), showgrid=False, tickfont=dict(color=COLOR_Y2), ticksuffix=suffix2, tickformat=fmt2, autorange="reversed" if invert_y2 else True, secondary_y=True)
 
     if config_format["rec"]:
-        recessions = [
-            ("1948-11-01", "1949-10-01"), ("1953-07-01", "1954-05-01"), ("1957-08-01", "1958-04-01"),
-            ("1960-04-01", "1961-02-01"), ("1969-12-01", "1970-11-01"), ("1973-11-01", "1975-03-01"),
-            ("1980-01-01", "1980-07-01"), ("1981-07-01", "1982-11-01"), ("1990-07-01", "1991-03-01"),
-            ("2001-03-01", "2001-11-01"), ("2007-12-01", "2009-06-01"), ("2020-02-01", "2020-04-01")
-        ]
+        recessions = [("1948-11-01", "1949-10-01"), ("1953-07-01", "1954-05-01"), ("1957-08-01", "1958-04-01"), ("1960-04-01", "1961-02-01"), ("1969-12-01", "1970-11-01"), ("1973-11-01", "1975-03-01"), ("1980-01-01", "1980-07-01"), ("1981-07-01", "1982-11-01"), ("1990-07-01", "1991-03-01"), ("2001-03-01", "2001-11-01"), ("2007-12-01", "2009-06-01"), ("2020-02-01", "2020-04-01")]
         if not df.empty:
             for start, end in recessions:
                 try:
@@ -259,7 +226,6 @@ def create_pro_chart(df, col1, col2=None, invert_y2=False, logo_data="", config_
     meta1 = INDICATOR_CONFIG.get(col1, {})
     fred_id1 = meta1.get("fred_id", "External Data" if col1 not in INDICATOR_CONFIG else "N/A")
     db_text = f"{fred_id1}" if col1 in INDICATOR_CONFIG else "Proprietary Data"
-    
     if has_secondary:
         meta2 = INDICATOR_CONFIG.get(col2, {})
         fred_id2 = meta2.get("fred_id", "External Data" if col2 not in INDICATOR_CONFIG else "N/A")
@@ -274,46 +240,100 @@ def create_pro_chart(df, col1, col2=None, invert_y2=False, logo_data="", config_
 # --- 7. INTERFAZ PRINCIPAL ---
 st.title("XTB Research Macro Dashboard")
 
-# 1. CARGA DE DATOS INICIAL
+# 1. CARGA DATOS
 df_fred = get_all_macro_data_long_history()
 
-# 2. SIDEBAR
+# 2. GESTIÓN DE SESIÓN (PARA ACUMULAR ARCHIVOS)
+if 'user_databases' not in st.session_state:
+    st.session_state['user_databases'] = {}
+
 with st.sidebar:
     st.header("📂 Datos Propios")
-    uploaded_file = st.file_uploader("Subir Excel (.xlsx)", type=["xlsx"])
-    st.divider()
+    # File Uploader
+    uploaded_file = st.file_uploader("Subir Excel (.xlsx) - Se acumulan", type=["xlsx"])
     
+    # LÓGICA DE ACUMULACIÓN
+    if uploaded_file is not None:
+        # Usar nombre del archivo como clave única
+        file_key = uploaded_file.name
+        
+        # Procesar solo si no está ya cargado para no re-leer
+        if file_key not in st.session_state['user_databases']:
+            try:
+                uploaded_file.seek(0)
+                df_temp = pd.read_excel(uploaded_file)
+                date_col = df_temp.columns[0]
+                df_temp[date_col] = pd.to_datetime(df_temp[date_col], errors='coerce')
+                df_temp = df_temp.dropna(subset=[date_col]).set_index(date_col).sort_index()
+                
+                for c in df_temp.columns:
+                    df_temp[c] = pd.to_numeric(df_temp[c], errors='coerce')
+                
+                df_temp = df_temp.select_dtypes(include=['number'])
+                
+                # Guardar en sesión
+                st.session_state['user_databases'][file_key] = df_temp
+                st.success(f"Agregado: {file_key}")
+            except Exception as e:
+                st.error(f"Error en {file_key}: {e}")
+
+    # MOSTRAR ARCHIVOS CARGADOS Y BOTÓN LIMPIAR
+    if st.session_state['user_databases']:
+        st.caption("📚 Archivos cargados:")
+        for name in st.session_state['user_databases']:
+            st.text(f"- {name}")
+        
+        if st.button("🗑️ Limpiar Todo"):
+            st.session_state['user_databases'] = {}
+            st.rerun()
+
+    # CONSTRUIR DF_FULL (FRED + TODOS LOS USUARIOS)
+    df_full = df_fred.copy()
+    user_cols_list = []
+    
+    for name, df_u in st.session_state['user_databases'].items():
+        if not df_full.empty:
+            df_full = df_full.join(df_u, how='outer').sort_index()
+        else:
+            df_full = df_u
+        user_cols_list.extend(df_u.columns.tolist())
+
+    st.divider()
     st.header("🛠️ Configuración")
     
-    # Fusión temporal para obtener columnas
-    if uploaded_file:
-        try:
-            df_temp = pd.read_excel(uploaded_file)
-            date_col = df_temp.columns[0]
-            user_cols = [c for c in df_temp.columns if c != date_col]
-        except: user_cols = []
-    else:
-        user_cols = []
-        
-    all_options = sorted(list(INDICATOR_CONFIG.keys()) + user_cols)
+    # Renombrado de Columnas Acumuladas
+    if user_cols_list:
+        with st.expander("📝 Renombrar Series Externas"):
+            new_names_map = {}
+            for col in user_cols_list:
+                new_n = st.text_input(f"Renombrar '{col}':", value=col, key=f"ren_{col}")
+                if new_n != col:
+                    new_names_map[col] = new_n
+            
+            if new_names_map:
+                df_full = df_full.rename(columns=new_names_map)
+
+    # Lista final de opciones
+    all_options = sorted(df_full.columns.tolist()) if not df_full.empty else sorted(INDICATOR_CONFIG.keys())
     
+    # PESTAÑAS
     tab_edit, tab_add, tab_fmt = st.tabs(["EDIT LINE", "ADD LINE", "FORMAT"])
     
     with tab_edit:
-        st.caption("Configurar Ejes")
+        st.caption("Eje Principal (Izq)")
         if all_options:
-            y1_sel = st.selectbox("Eje Principal (Izq)", options=all_options, index=0)
-            y2_sel = st.selectbox("Eje Secundario (Der)", options=["Ninguno"] + all_options, index=0)
-        else:
-            y1_sel = "Sin Datos"
-            y2_sel = "Ninguno"
+            y1_sel = st.selectbox("Indicador", options=all_options, index=0, key="sel_y1")
+        else: y1_sel = "Sin Datos"
+            
+    with tab_add:
+        st.caption("Eje Secundario (Der)")
+        if all_options:
+            y2_sel = st.selectbox("Indicador", options=["Ninguno"] + all_options, index=0, key="sel_y2")
+        else: y2_sel = "Ninguno"
         invert_y2 = st.checkbox("Invertir Eje Der.", value=True)
         
-    with tab_add:
-        st.info("Para subir series externas, utilice el cargador 'Datos Propios' arriba.")
-        
     with tab_fmt:
-        st.caption("Estilo Visual")
+        st.caption("Estilo")
         chart_type = st.selectbox("Tipo", ["Línea", "Barra", "Área"])
         chart_color = st.color_picker("Color Principal", "#002b49")
         chart_width = st.slider("Grosor", 1.0, 5.0, 2.5)
@@ -322,55 +342,19 @@ with st.sidebar:
 
     st.divider()
     
-    # 3. SECCIÓN IA AJUSTADA (ASERTIVIDAD Y CONCISIÓN)
+    # IA
     st.header("🤖 Analista IA")
     gemini_key = st.text_input("Gemini API Key:", type="password")
     
     if gemini_key:
         genai.configure(api_key=gemini_key)
         st.success("Conectado")
-        
-        with st.expander("Instrucción para la IA"):
-            # NUEVO PROMPT ASERTIVO Y DIRECTO
-            default_prompt = (
-                "Eres un estratega macroeconómico senior de XTB. "
-                "REGLAS OBLIGATORIAS: "
-                "1. SÉ BREVE Y CONCISO. Elimina saludos, cortesías y texto de relleno. "
-                "2. NO DIGAS 'Estimado cliente'. Ve directo al análisis. "
-                "3. SÉ ASERTIVO. No uses frases como 'esto sugiere' o 'podría deberse a'. "
-                "AFIRMA las causas históricas con seguridad (ej: 'La caída de 2020 FUE por el impacto del COVID-19'). "
-                "Usa los datos proporcionados como base, pero complétalos con tu conocimiento externo para explicar el POR QUÉ de los movimientos de forma contundente."
-            )
-            system_prompt = st.text_area("Rol del Asistente:", value=default_prompt, height=150)
-
-logo_b64 = get_local_logo_base64()
-
-# 4. PROCESAMIENTO DE DATOS REAL
-df_full = df_fred.copy()
-if uploaded_file is not None:
-    try:
-        uploaded_file.seek(0)
-        df_user = pd.read_excel(uploaded_file)
-        date_col = df_user.columns[0]
-        df_user[date_col] = pd.to_datetime(df_user[date_col], errors='coerce')
-        df_user = df_user.dropna(subset=[date_col]).set_index(date_col).sort_index()
-        for c in df_user.columns:
-            df_user[c] = pd.to_numeric(df_user[c], errors='coerce')
-        df_user = df_user.select_dtypes(include=['number'])
-        
-        if not df_full.empty:
-            df_full = df_full.join(df_user, how='outer').sort_index()
-        else:
-            df_full = df_user
-            
-        st.sidebar.success(f"Excel: {len(df_user.columns)} series.")
-    except Exception as e:
-        st.sidebar.error(f"Error al procesar Excel: {e}")
+        with st.expander("Instrucción"):
+            system_prompt = st.text_area("Rol:", value="Eres un estratega macro senior de XTB. Sé breve, directo y asertivo. Usa datos + contexto externo.", height=100)
 
 # --- 8. VISUALIZACIÓN ---
 if not df_full.empty and y1_sel != "Sin Datos":
     
-    # CHATBOT
     if gemini_key:
         with st.sidebar:
             user_question = st.text_area("Preguntar a IA:", placeholder="¿Qué ves en el gráfico?")
@@ -378,88 +362,54 @@ if not df_full.empty and y1_sel != "Sin Datos":
                 if user_question:
                     with st.spinner("Analizando..."):
                         try:
-                            # 1. Selección Modelo
-                            available_models = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
-                            target_model = next((m for m in available_models if 'flash' in m), None)
-                            if not target_model:
-                                target_model = next((m for m in available_models if 'pro' in m), available_models[0] if available_models else None)
-                            
-                            if not target_model:
-                                st.error("No hay modelos disponibles.")
-                            else:
-                                # 2. Datos
-                                data_context = df_full[[y1_sel]].dropna().tail(30).to_csv()
-                                model = genai.GenerativeModel(target_model)
-                                
-                                full_prompt = f"""
-                                INSTRUCCIÓN: {system_prompt}
-                                DATOS (CSV):
-                                {data_context}
-                                PREGUNTA: {user_question}
-                                """
-                                response = model.generate_content(full_prompt)
-                                st.info(response.text)
-                                st.caption(f"Modelo: {target_model}")
-                            
-                        except Exception as e:
-                            st.error(f"Error: {str(e)}")
+                            avail = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
+                            t_model = next((m for m in avail if 'flash' in m), next((m for m in avail if 'pro' in m), None))
+                            if t_model:
+                                data_csv = df_full[[y1_sel]].dropna().tail(30).to_csv()
+                                model = genai.GenerativeModel(t_model)
+                                prompt = f"SISTEMA: {system_prompt}\nDATOS: {data_csv}\nPREGUNTA: {user_question}"
+                                res = model.generate_content(prompt)
+                                st.info(res.text)
+                            else: st.error("No hay modelos.")
+                        except Exception as e: st.error(f"Error: {e}")
 
-    # GRÁFICO
     fig = create_pro_chart(df_full, y1_sel, y2_sel, invert_y2, logo_b64, config_visual)
     st.plotly_chart(fig, use_container_width=True)
     
-    # TABLA
     st.divider()
+    # TABLA
     meta_info = INDICATOR_CONFIG.get(y1_sel, {"type": "market"}) 
-    is_user_data = y1_sel not in INDICATOR_CONFIG
-    is_macro_data = (meta_info.get("type") == "macro")
+    is_macro = (meta_info.get("type") == "macro") or (y1_sel not in INDICATOR_CONFIG) 
     
-    if is_macro_data or is_user_data:
+    if is_macro:
         st.subheader(f"📅 Histórico: {y1_sel}")
         start_dt_table = pd.to_datetime("2020-01-01")
-        df_table_view = df_full[df_full.index >= start_dt_table]
+        df_view = df_full[df_full.index >= start_dt_table].copy()
         
-        df_cal = df_table_view[[y1_sel]].dropna().sort_index(ascending=False)
+        df_cal = df_view[[y1_sel]].dropna().sort_index(ascending=False)
         df_cal['Anterior'] = df_cal[y1_sel].shift(-1)
-        
-        df_cal.index.name = 'Fecha_Base'
         df_cal = df_cal.reset_index()
-        
-        df_cal['Mes_Ref'] = df_cal['Fecha_Base'].dt.month
-        df_cal['Referencia'] = df_cal['Mes_Ref'].apply(get_month_name) + " " + df_cal['Fecha_Base'].dt.year.astype(str)
-        df_cal['Fecha_Pub'] = df_cal['Fecha_Base'] + pd.DateOffset(months=1)
-        df_cal['Mes_Pub'] = df_cal['Fecha_Pub'].dt.month
-        df_cal['Publicación (Est.)'] = df_cal['Mes_Pub'].apply(get_month_name) + " " + df_cal['Fecha_Pub'].dt.year.astype(str)
+        df_cal['Referencia'] = df_cal.iloc[:,0].dt.month.apply(get_month_name) + " " + df_cal.iloc[:,0].dt.year.astype(str)
+        df_cal['Publicación'] = (df_cal.iloc[:,0] + pd.DateOffset(months=1)).dt.month.apply(get_month_name) + " " + (df_cal.iloc[:,0] + pd.DateOffset(months=1)).dt.year.astype(str)
         
         df_cal = df_cal.rename(columns={y1_sel: 'Actual'})
-        is_pct_table = meta_info.get("is_percent", False)
         
-        def fmt_num_table(x):
+        is_pct = meta_info.get("is_percent", False)
+        def fmt(x):
             if pd.isna(x): return ""
-            if is_pct_table:
-                txt = f"{x:.2f}"
-                if txt.endswith(".00"): txt = txt[:-3]
-                return f"{txt}%"
-            else:
-                txt = f"{x:,.2f}"
-                if txt.endswith(".00"): txt = txt[:-3]
-                return txt
+            txt = f"{x:.2f}"
+            if txt.endswith(".00"): txt = txt[:-3]
+            return f"{txt}%" if is_pct else txt
 
-        df_cal['Actual'] = df_cal['Actual'].apply(fmt_num_table)
-        df_cal['Anterior'] = df_cal['Anterior'].apply(fmt_num_table)
-        df_display = df_cal[['Referencia', 'Publicación (Est.)', 'Actual', 'Anterior']].dropna(subset=['Anterior'])
-
+        df_cal['Actual'] = df_cal['Actual'].apply(fmt)
+        df_cal['Anterior'] = df_cal['Anterior'].apply(fmt)
+        
         st.dataframe(
-            df_display, hide_index=True, use_container_width=True,
-            column_config={
-                "Referencia": st.column_config.TextColumn("Referencia", width="medium"),
-                "Publicación (Est.)": st.column_config.TextColumn("Publicación", width="medium"),
-                "Actual": st.column_config.TextColumn("Dato Actual", width="small"),
-                "Anterior": st.column_config.TextColumn("Dato Anterior", width="small"),
-            }
+            df_cal[['Referencia', 'Publicación', 'Actual', 'Anterior']].dropna(subset=['Anterior']),
+            hide_index=True, use_container_width=True
         )
     else:
         st.caption(f"ℹ️ Tabla no disponible para datos de alta frecuencia ({y1_sel}).")
 
 else:
-    st.warning("Cargando datos o esperando archivo Excel...")
+    st.warning("Cargando datos...")
