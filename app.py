@@ -18,7 +18,7 @@ st.markdown("""
     h1, h2, h3, h4, p, div {font-family: 'Arial', sans-serif;}
     .modebar {display: none !important;}
     
-    .stSelectbox label, .stNumberInput label, .stCheckbox label, .stTextInput label, .stTextArea label {
+    .stSelectbox label, .stNumberInput label, .stCheckbox label, .stTextInput label, .stTextArea label, .stColorPicker label, .stSlider label {
         color: #EAEAEA !important; 
         font-weight: bold;
         font-size: 13px;
@@ -46,6 +46,9 @@ st.markdown("""
         background-color: #ff4b4b;
         color: white;
     }
+    
+    /* Separadores visuales */
+    hr { margin-top: 5px; margin-bottom: 10px; border-color: #444; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -123,13 +126,20 @@ def get_all_macro_data_long_history():
         df_calc = df_master.ffill() 
     return df_master
 
-# --- 6. FÁBRICA DE GRÁFICOS ---
+# --- 6. FÁBRICA DE GRÁFICOS (CONFIGURACIÓN DUAL) ---
 def create_pro_chart(df, col1, col2=None, invert_y2=False, logo_data="", config_format=None):
     if config_format is None:
-        config_format = {"color": "#002b49", "width": 2.5, "type": "Línea", "rec": True}
+        config_format = {"color": "#002b49", "width": 2.5, "type": "Línea", "rec": True, "color_l2": "#5ca6e5", "width_l2": 2.0, "dash_l2": "dash"}
 
-    COLOR_Y1 = config_format["color"]
-    COLOR_Y2 = "#5ca6e5" 
+    # Configuración L1
+    COLOR_Y1 = config_format.get("color", "#002b49")
+    WIDTH_Y1 = config_format.get("width", 2.5)
+    
+    # Configuración L2
+    COLOR_Y2 = config_format.get("color_l2", "#5ca6e5")
+    WIDTH_Y2 = config_format.get("width_l2", 2.0)
+    DASH_Y2 = config_format.get("dash_l2", "dash")
+
     has_secondary = col2 is not None and col2 != "Ninguno"
     suffix1, fmt1 = get_format_settings(col1)
     
@@ -142,7 +152,7 @@ def create_pro_chart(df, col1, col2=None, invert_y2=False, logo_data="", config_
 
     first_valid_date = None
 
-    # EJE 1
+    # EJE 1 (PRINCIPAL)
     try:
         s1 = df[col1].dropna()
         if not s1.empty:
@@ -150,17 +160,17 @@ def create_pro_chart(df, col1, col2=None, invert_y2=False, logo_data="", config_
             last_v1 = s1.iloc[-1]
             
             if config_format["type"] == "Línea":
-                fig.add_trace(go.Scatter(x=s1.index, y=s1, name=col1, line=dict(color=COLOR_Y1, width=config_format["width"]), mode='lines', hovertemplate=f"<b>{col1}</b><br>{hover_fmt}: %{{y:,.2f}}{suffix1}<extra></extra>"), secondary_y=False)
+                fig.add_trace(go.Scatter(x=s1.index, y=s1, name=col1, line=dict(color=COLOR_Y1, width=WIDTH_Y1), mode='lines', hovertemplate=f"<b>{col1}</b><br>{hover_fmt}: %{{y:,.2f}}{suffix1}<extra></extra>"), secondary_y=False)
             elif config_format["type"] == "Barra":
                  fig.add_trace(go.Bar(x=s1.index, y=s1, name=col1, marker=dict(color=COLOR_Y1), hovertemplate=f"<b>{col1}</b><br>{hover_fmt}: %{{y:,.2f}}{suffix1}<extra></extra>"), secondary_y=False)
             elif config_format["type"] == "Área":
-                 fig.add_trace(go.Scatter(x=s1.index, y=s1, name=col1, line=dict(color=COLOR_Y1, width=config_format["width"]), fill='tozeroy', mode='lines', hovertemplate=f"<b>{col1}</b><br>{hover_fmt}: %{{y:,.2f}}{suffix1}<extra></extra>"), secondary_y=False)
+                 fig.add_trace(go.Scatter(x=s1.index, y=s1, name=col1, line=dict(color=COLOR_Y1, width=WIDTH_Y1), fill='tozeroy', mode='lines', hovertemplate=f"<b>{col1}</b><br>{hover_fmt}: %{{y:,.2f}}{suffix1}<extra></extra>"), secondary_y=False)
             
             txt_val = f"{last_v1:,.2f}{suffix1}" if suffix1 == "%" else f"{last_v1:,.2f}"
             fig.add_annotation(x=s1.index[-1], y=last_v1, text=f" {txt_val}", xref="x", yref="y1", xanchor="left", showarrow=False, font=dict(color="white", size=11, weight="bold"), bgcolor=COLOR_Y1, borderpad=4, opacity=0.9)
     except: pass
 
-    # EJE 2
+    # EJE 2 (SECUNDARIO - PERSONALIZABLE)
     if has_secondary:
         suffix2, fmt2 = get_format_settings(col2)
         try:
@@ -169,7 +179,14 @@ def create_pro_chart(df, col1, col2=None, invert_y2=False, logo_data="", config_
                 start_2 = s2.index[0]
                 if first_valid_date is None or start_2 < first_valid_date: first_valid_date = start_2
                 last_v2 = s2.iloc[-1]
-                fig.add_trace(go.Scatter(x=s2.index, y=s2, name=col2, line=dict(color=COLOR_Y2, width=2, dash='dash'), mode='lines', hovertemplate=f"<b>{col2}</b><br>{hover_fmt}: %{{y:,.2f}}{suffix2}<extra></extra>"), secondary_y=True)
+                
+                # APLICAMOS CONFIGURACIÓN PERSONALIZADA PARA L2
+                fig.add_trace(go.Scatter(
+                    x=s2.index, y=s2, name=col2, 
+                    line=dict(color=COLOR_Y2, width=WIDTH_Y2, dash=DASH_Y2), 
+                    mode='lines', 
+                    hovertemplate=f"<b>{col2}</b><br>{hover_fmt}: %{{y:,.2f}}{suffix2}<extra></extra>"
+                ), secondary_y=True)
                 
                 txt_val2 = f"{last_v2:,.2f}{suffix2}" if suffix2 == "%" else f"{last_v2:,.2f}"
                 fig.add_annotation(x=s2.index[-1], y=last_v2, text=f" {txt_val2}", xref="x", yref="y2", xanchor="left", showarrow=False, font=dict(color="white", size=11, weight="bold"), bgcolor=COLOR_Y2, borderpad=4, opacity=0.9)
@@ -243,21 +260,17 @@ st.title("XTB Research Macro Dashboard")
 # 1. CARGA DATOS
 df_fred = get_all_macro_data_long_history()
 
-# 2. GESTIÓN DE SESIÓN (PARA ACUMULAR ARCHIVOS)
+# 2. GESTIÓN DE SESIÓN
 if 'user_databases' not in st.session_state:
     st.session_state['user_databases'] = {}
 
+# 3. SIDEBAR
 with st.sidebar:
     st.header("📂 Datos Propios")
-    # File Uploader
-    uploaded_file = st.file_uploader("Subir Excel (.xlsx) - Se acumulan", type=["xlsx"])
+    uploaded_file = st.file_uploader("Subir Excel (.xlsx)", type=["xlsx"])
     
-    # LÓGICA DE ACUMULACIÓN
     if uploaded_file is not None:
-        # Usar nombre del archivo como clave única
         file_key = uploaded_file.name
-        
-        # Procesar solo si no está ya cargado para no re-leer
         if file_key not in st.session_state['user_databases']:
             try:
                 uploaded_file.seek(0)
@@ -268,55 +281,61 @@ with st.sidebar:
                 
                 for c in df_temp.columns:
                     df_temp[c] = pd.to_numeric(df_temp[c], errors='coerce')
-                
                 df_temp = df_temp.select_dtypes(include=['number'])
                 
-                # Guardar en sesión
                 st.session_state['user_databases'][file_key] = df_temp
                 st.success(f"Agregado: {file_key}")
             except Exception as e:
-                st.error(f"Error en {file_key}: {e}")
+                st.error(f"Error: {e}")
 
-    # MOSTRAR ARCHIVOS CARGADOS Y BOTÓN LIMPIAR
+    # LISTAR Y LIMPIAR
     if st.session_state['user_databases']:
-        st.caption("📚 Archivos cargados:")
+        st.caption("📚 Archivos activos:")
         for name in st.session_state['user_databases']:
             st.text(f"- {name}")
-        
         if st.button("🗑️ Limpiar Todo"):
             st.session_state['user_databases'] = {}
             st.rerun()
 
-    # CONSTRUIR DF_FULL (FRED + TODOS LOS USUARIOS)
+    # --- FUSIÓN Y RENOMBRADO ---
     df_full = df_fred.copy()
     user_cols_list = []
     
-    for name, df_u in st.session_state['user_databases'].items():
+    for filename, df_u in st.session_state['user_databases'].items():
+        df_to_merge = df_u.copy()
+        
+        # Anti-colisión
+        cols_map = {}
+        for c in df_to_merge.columns:
+            if c in df_full.columns or "Unnamed" in str(c):
+                cols_map[c] = f"{c} ({filename})"
+        if cols_map: df_to_merge.rename(columns=cols_map, inplace=True)
+        
         if not df_full.empty:
-            df_full = df_full.join(df_u, how='outer').sort_index()
+            df_full = df_full.join(df_to_merge, how='outer').sort_index()
         else:
-            df_full = df_u
-        user_cols_list.extend(df_u.columns.tolist())
+            df_full = df_to_merge
+        
+        user_cols_list.extend(df_to_merge.columns.tolist())
+
+    # SECCIÓN RENOMBRAR (PERSISTENTE)
+    if user_cols_list:
+        st.markdown("---")
+        with st.expander("📝 Renombrar Series Cargadas"):
+            rename_map = {}
+            for col in user_cols_list:
+                new_n = st.text_input(f"Renombrar '{col}':", value=col, key=f"ren_{col}")
+                if new_n != col:
+                    rename_map[col] = new_n
+            
+            if rename_map:
+                df_full = df_full.rename(columns=rename_map)
 
     st.divider()
     st.header("🛠️ Configuración")
     
-    # Renombrado de Columnas Acumuladas
-    if user_cols_list:
-        with st.expander("📝 Renombrar Series Externas"):
-            new_names_map = {}
-            for col in user_cols_list:
-                new_n = st.text_input(f"Renombrar '{col}':", value=col, key=f"ren_{col}")
-                if new_n != col:
-                    new_names_map[col] = new_n
-            
-            if new_names_map:
-                df_full = df_full.rename(columns=new_names_map)
-
-    # Lista final de opciones
     all_options = sorted(df_full.columns.tolist()) if not df_full.empty else sorted(INDICATOR_CONFIG.keys())
     
-    # PESTAÑAS
     tab_edit, tab_add, tab_fmt = st.tabs(["EDIT LINE", "ADD LINE", "FORMAT"])
     
     with tab_edit:
@@ -333,12 +352,33 @@ with st.sidebar:
         invert_y2 = st.checkbox("Invertir Eje Der.", value=True)
         
     with tab_fmt:
-        st.caption("Estilo")
-        chart_type = st.selectbox("Tipo", ["Línea", "Barra", "Área"])
-        chart_color = st.color_picker("Color Principal", "#002b49")
-        chart_width = st.slider("Grosor", 1.0, 5.0, 2.5)
+        st.markdown("**Línea 1 (Principal)**")
+        c1_1, c1_2 = st.columns(2)
+        with c1_1:
+            chart_type = st.selectbox("Tipo", ["Línea", "Barra", "Área"])
+            chart_color = st.color_picker("Color L1", "#002b49")
+        with c1_2:
+            chart_width = st.slider("Grosor L1", 0.5, 5.0, 2.5)
+        
+        st.markdown("---")
+        st.markdown("**Línea 2 (Secundaria)**")
+        c2_1, c2_2 = st.columns(2)
+        with c2_1:
+            color_l2 = st.color_picker("Color L2", "#5ca6e5")
+            style_l2_opt = st.selectbox("Estilo L2", ["Guiones", "Sólida", "Puntos"], index=0)
+        with c2_2:
+            width_l2 = st.slider("Grosor L2", 0.5, 5.0, 2.0)
+            
+        dash_map = {"Sólida": "solid", "Guiones": "dash", "Puntos": "dot"}
+        dash_l2 = dash_map[style_l2_opt]
+        
+        st.markdown("---")
         chart_rec = st.checkbox("Recesiones", value=True)
-        config_visual = {"type": chart_type, "color": chart_color, "width": chart_width, "rec": chart_rec}
+        
+        config_visual = {
+            "type": chart_type, "color": chart_color, "width": chart_width, "rec": chart_rec,
+            "color_l2": color_l2, "width_l2": width_l2, "dash_l2": dash_l2
+        }
 
     st.divider()
     
@@ -379,7 +419,7 @@ if not df_full.empty and y1_sel != "Sin Datos":
     st.divider()
     # TABLA
     meta_info = INDICATOR_CONFIG.get(y1_sel, {"type": "market"}) 
-    is_macro = (meta_info.get("type") == "macro") or (y1_sel not in INDICATOR_CONFIG) 
+    is_macro = (meta_info.get("type") == "macro") or (y1_sel not in INDICATOR_CONFIG)
     
     if is_macro:
         st.subheader(f"📅 Histórico: {y1_sel}")
