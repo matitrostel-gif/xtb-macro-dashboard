@@ -18,7 +18,7 @@ st.markdown("""
     h1, h2, h3, h4, p, div {font-family: 'Arial', sans-serif;}
     .modebar {display: none !important;}
     
-    .stSelectbox label, .stNumberInput label, .stCheckbox label, .stTextInput label {
+    .stSelectbox label, .stNumberInput label, .stCheckbox label, .stTextInput label, .stTextArea label {
         color: #EAEAEA !important; 
         font-weight: bold;
         font-size: 13px;
@@ -26,7 +26,6 @@ st.markdown("""
     div[data-testid="stCheckbox"] { margin-top: 5px; }
     [data-testid="stDataFrame"] { font-family: 'Arial', sans-serif; }
     
-    /* Buzón de Excel */
     [data-testid="stFileUploader"] {
         padding: 10px;
         border: 1px dashed #4a4a4a;
@@ -34,7 +33,6 @@ st.markdown("""
         margin-bottom: 15px;
     }
     
-    /* Pestañas en Sidebar (Compactas) */
     .stTabs [data-baseweb="tab-list"] { gap: 2px; }
     .stTabs [data-baseweb="tab"] {
         padding: 6px 10px;
@@ -48,9 +46,6 @@ st.markdown("""
         background-color: #ff4b4b;
         color: white;
     }
-    
-    /* Separador */
-    hr {margin-top: 10px; margin-bottom: 10px; opacity: 0.2;}
 </style>
 """, unsafe_allow_html=True)
 
@@ -59,19 +54,20 @@ FRED_API_KEY = "a913b86d145620f86b690a7e4fe4538e"
 
 # --- 3. CONFIGURACIÓN MAESTRA ---
 INDICATOR_CONFIG = {
-    "Tasa Desempleo": {"fred_id": "UNRATE", "type": "macro", "is_percent": True},
-    "Tasa Participación": {"fred_id": "CIVPART", "type": "macro", "is_percent": True},
-    "Nóminas NFP (YoY%)": {"fred_id": "PAYEMS", "type": "macro", "is_percent": True, "units": "pc1"},
-    "Initial Claims": {"fred_id": "ICSA", "type": "macro", "is_percent": True, "units": "pc1"},
-    "PCE Price Index": {"fred_id": "PCEPI", "type": "macro", "is_percent": True, "units": "pc1"},
-    "CPI Core": {"fred_id": "CPIAUCSL", "type": "macro", "is_percent": True, "units": "pc1"},
-    "Liquidez FED": {"fred_id": "WALCL", "type": "macro", "is_percent": True, "units": "pc1"},
-    "M2 Money Supply": {"fred_id": "M2SL", "type": "macro", "is_percent": True, "units": "pc1"},
-    "Producción Ind.": {"fred_id": "INDPRO", "type": "macro", "is_percent": True, "units": "pc1"},
-    "Bono US 10Y": {"fred_id": "DGS10", "type": "market", "is_percent": True},
-    "Bono US 2Y": {"fred_id": "DGS2", "type": "market", "is_percent": True},
-    "Tasa FED": {"fred_id": "FEDFUNDS", "type": "market", "is_percent": True},
-    "Volatilidad VIX": {"fred_id": "VIXCLS", "type": "market", "is_percent": False},
+    "Tasa Desempleo": {"fred_id": "UNRATE", "source": "U.S. BLS", "type": "macro", "is_percent": True, "units": "lin"},
+    "Tasa Participación Laboral": {"fred_id": "CIVPART", "source": "U.S. BLS", "type": "macro", "is_percent": True, "units": "lin"},
+    "Nóminas NFP (YoY%)": {"fred_id": "PAYEMS", "source": "U.S. BLS", "type": "macro", "is_percent": True, "units": "pc1"},
+    "Initial Jobless Claims (YoY%)": {"fred_id": "ICSA", "source": "U.S. ETA", "type": "macro", "is_percent": True, "units": "pc1"},
+    "PCE Price Index (YoY%)": {"fred_id": "PCEPI", "source": "U.S. BEA", "type": "macro", "is_percent": True, "units": "pc1"},
+    "CPI Core (YoY%)": {"fred_id": "CPIAUCSL", "source": "U.S. BLS", "type": "macro", "is_percent": True, "units": "pc1"},
+    "Liquidez FED (YoY%)": {"fred_id": "WALCL", "source": "Federal Reserve", "type": "macro", "is_percent": True, "units": "pc1"},
+    "Oferta Monetaria M2 (YoY%)": {"fred_id": "M2SL", "source": "Federal Reserve", "type": "macro", "is_percent": True, "units": "pc1"},
+    "Producción Industrial (YoY%)": {"fred_id": "INDPRO", "source": "Federal Reserve", "type": "macro", "is_percent": True, "units": "pc1"},
+    "Bono US 10Y": {"fred_id": "DGS10", "source": "Board of Governors", "type": "market", "is_percent": True, "units": "lin"},
+    "Bono US 2Y": {"fred_id": "DGS2", "source": "Board of Governors", "type": "market", "is_percent": True, "units": "lin"},
+    "Curva Tipos (10Y-2Y)": {"fred_id": "DGS10, DGS2", "source": "Board of Governors", "type": "market", "is_percent": True, "units": "lin"},
+    "Tasa FED": {"fred_id": "FEDFUNDS", "source": "Board of Governors", "type": "market", "is_percent": True, "units": "lin"},
+    "Volatilidad VIX": {"fred_id": "VIXCLS", "source": "CBOE", "type": "market", "is_percent": False, "units": "lin"},
 }
 
 # --- 4. UTILIDADES ---
@@ -83,7 +79,7 @@ def get_local_logo_base64():
         if os.path.exists(full_path):
             try:
                 with open(full_path, "rb") as f:
-                    return f"data:image/png;base64,{base64.b64encode(f.read()).decode()}"
+                    return f"data:image/{'png' if 'png' in filename else 'jpeg'};base64,{base64.b64encode(f.read()).decode()}"
             except: continue
     return ""
 
@@ -114,8 +110,7 @@ def get_all_macro_data_long_history():
         series_to_fetch = {k: v for k, v in INDICATOR_CONFIG.items() if "," not in v["fred_id"]}
         for name, config in series_to_fetch.items():
             try:
-                units = config.get("units", "lin")
-                series = fred.get_series(config["fred_id"], observation_start=start_date, units=units)
+                series = fred.get_series(config["fred_id"], observation_start=start_date, units=config["units"])
                 temp = series.to_frame(name=name)
                 if df_master.empty: df_master = temp
                 else: df_master = df_master.join(temp, how='outer')
@@ -124,6 +119,9 @@ def get_all_macro_data_long_history():
     if not df_master.empty:
         df_master.index = pd.to_datetime(df_master.index)
         df_calc = df_master.ffill() 
+        if 'Bono US 10Y' in df_calc.columns and 'Bono US 2Y' in df_calc.columns:
+            df_master['Curva Tipos (10Y-2Y)'] = df_calc['Bono US 10Y'] - df_calc['Bono US 2Y']
+            
     return df_master
 
 # --- 6. FÁBRICA DE GRÁFICOS ---
@@ -136,7 +134,6 @@ def create_pro_chart(df, col1, col2=None, invert_y2=False, logo_data="", config_
     has_secondary = col2 is not None and col2 != "Ninguno"
     suffix1, fmt1 = get_format_settings(col1)
     
-    # 1. FILTRADO ESTRICTO DE FECHAS (CORTAFUEGOS)
     hoy_real = datetime.datetime.now()
     if not df.empty:
         df = df[df.index <= hoy_real] 
@@ -144,7 +141,6 @@ def create_pro_chart(df, col1, col2=None, invert_y2=False, logo_data="", config_
     fig = make_subplots(specs=[[{"secondary_y": has_secondary}]])
     hover_fmt = "%{x|%A, %b %d, %Y}"
 
-    # Detección dinámica de inicio para evitar huecos a la izquierda
     first_valid_date = None
 
     # EJE 1
@@ -155,14 +151,27 @@ def create_pro_chart(df, col1, col2=None, invert_y2=False, logo_data="", config_
             last_v1 = s1.iloc[-1]
             
             if config_format["type"] == "Línea":
-                fig.add_trace(go.Scatter(x=s1.index, y=s1, name=col1, line=dict(color=COLOR_Y1, width=config_format["width"]), mode='lines', hovertemplate=f"<b>{col1}</b><br>{hover_fmt}: %{{y:,.2f}}{suffix1}<extra></extra>"), secondary_y=False)
+                fig.add_trace(go.Scatter(
+                    x=s1.index, y=s1, name=col1, line=dict(color=COLOR_Y1, width=config_format["width"]), 
+                    mode='lines', hovertemplate=f"<b>{col1}</b><br>{hover_fmt}: %{{y:,.2f}}{suffix1}<extra></extra>"
+                ), secondary_y=False)
             elif config_format["type"] == "Barra":
-                 fig.add_trace(go.Bar(x=s1.index, y=s1, name=col1, marker=dict(color=COLOR_Y1), hovertemplate=f"<b>{col1}</b><br>{hover_fmt}: %{{y:,.2f}}{suffix1}<extra></extra>"), secondary_y=False)
+                 fig.add_trace(go.Bar(
+                    x=s1.index, y=s1, name=col1, marker=dict(color=COLOR_Y1),
+                    hovertemplate=f"<b>{col1}</b><br>{hover_fmt}: %{{y:,.2f}}{suffix1}<extra></extra>"
+                ), secondary_y=False)
             elif config_format["type"] == "Área":
-                 fig.add_trace(go.Scatter(x=s1.index, y=s1, name=col1, line=dict(color=COLOR_Y1, width=config_format["width"]), fill='tozeroy', mode='lines', hovertemplate=f"<b>{col1}</b><br>{hover_fmt}: %{{y:,.2f}}{suffix1}<extra></extra>"), secondary_y=False)
+                 fig.add_trace(go.Scatter(
+                    x=s1.index, y=s1, name=col1, line=dict(color=COLOR_Y1, width=config_format["width"]), 
+                    fill='tozeroy', mode='lines', hovertemplate=f"<b>{col1}</b><br>{hover_fmt}: %{{y:,.2f}}{suffix1}<extra></extra>"
+                ), secondary_y=False)
             
             txt_val = f"{last_v1:,.2f}{suffix1}" if suffix1 == "%" else f"{last_v1:,.2f}"
-            fig.add_annotation(x=s1.index[-1], y=last_v1, text=f" {txt_val}", xref="x", yref="y1", xanchor="left", showarrow=False, font=dict(color="white", size=11, weight="bold"), bgcolor=COLOR_Y1, borderpad=4, opacity=0.9)
+            fig.add_annotation(
+                x=s1.index[-1], y=last_v1, text=f" {txt_val}",
+                xref="x", yref="y1", xanchor="left", showarrow=False,
+                font=dict(color="white", size=11, weight="bold"), bgcolor=COLOR_Y1, borderpad=4, opacity=0.9
+            )
     except: pass
 
     # EJE 2
@@ -175,10 +184,17 @@ def create_pro_chart(df, col1, col2=None, invert_y2=False, logo_data="", config_
                 if first_valid_date is None or start_2 < first_valid_date:
                     first_valid_date = start_2
                 last_v2 = s2.iloc[-1]
-                fig.add_trace(go.Scatter(x=s2.index, y=s2, name=col2, line=dict(color=COLOR_Y2, width=2, dash='dash'), mode='lines', hovertemplate=f"<b>{col2}</b><br>{hover_fmt}: %{{y:,.2f}}{suffix2}<extra></extra>"), secondary_y=True)
+                fig.add_trace(go.Scatter(
+                    x=s2.index, y=s2, name=col2, line=dict(color=COLOR_Y2, width=2, dash='dash'), 
+                    mode='lines', hovertemplate=f"<b>{col2}</b><br>{hover_fmt}: %{{y:,.2f}}{suffix2}<extra></extra>"
+                ), secondary_y=True)
                 
                 txt_val2 = f"{last_v2:,.2f}{suffix2}" if suffix2 == "%" else f"{last_v2:,.2f}"
-                fig.add_annotation(x=s2.index[-1], y=last_v2, text=f" {txt_val2}", xref="x", yref="y2", xanchor="left", showarrow=False, font=dict(color="white", size=11, weight="bold"), bgcolor=COLOR_Y2, borderpad=4, opacity=0.9)
+                fig.add_annotation(
+                    x=s2.index[-1], y=last_v2, text=f" {txt_val2}",
+                    xref="x", yref="y2", xanchor="left", showarrow=False,
+                    font=dict(color="white", size=11, weight="bold"), bgcolor=COLOR_Y2, borderpad=4, opacity=0.9
+                )
         except: pass
 
     title_text = f"<b>{col1}</b>"
@@ -192,7 +208,6 @@ def create_pro_chart(df, col1, col2=None, invert_y2=False, logo_data="", config_
         images=[dict(source=logo_data, xref="paper", yref="paper", x=1, y=1.22, sizex=0.12, sizey=0.12, xanchor="right", yanchor="top")]
     )
 
-    # RANGO VISUAL DINÁMICO (Sin huecos)
     if first_valid_date is None: first_valid_date = pd.Timestamp("2000-01-01")
     
     fig.update_xaxes(
@@ -259,55 +274,39 @@ def create_pro_chart(df, col1, col2=None, invert_y2=False, logo_data="", config_
 # --- 7. INTERFAZ PRINCIPAL ---
 st.title("XTB Research Macro Dashboard")
 
-# === ORDEN DE EJECUCIÓN LÓGICO ===
-
-# 1. Cargar Datos FRED (Silencioso)
+# 1. CARGA DE DATOS INICIAL
 df_fred = get_all_macro_data_long_history()
 
-# 2. Sidebar - Parte Superior (Carga de Datos)
+# 2. SIDEBAR
 with st.sidebar:
     st.header("📂 Datos Propios")
     uploaded_file = st.file_uploader("Subir Excel (.xlsx)", type=["xlsx"])
     st.divider()
-
-# 3. Procesar Datos (Fusión FRED + Excel)
-df_full = df_fred.copy()
-if uploaded_file is not None:
-    try:
-        df_user = pd.read_excel(uploaded_file)
-        date_col = df_user.columns[0]
-        df_user[date_col] = pd.to_datetime(df_user[date_col], errors='coerce')
-        df_user = df_user.dropna(subset=[date_col]).set_index(date_col).sort_index()
-        for c in df_user.columns:
-            df_user[c] = pd.to_numeric(df_user[c], errors='coerce')
-        df_user = df_user.select_dtypes(include=['number'])
-        
-        if not df_full.empty:
-            df_full = df_full.join(df_user, how='outer').sort_index()
-        else:
-            df_full = df_user
-        st.sidebar.success(f"Excel: {len(df_user.columns)} series.")
-    except Exception as e:
-        st.sidebar.error(f"Error Excel: {e}")
-
-# 4. Determinar lista de indicadores disponibles
-available_indicators = sorted(df_full.columns.tolist()) if not df_full.empty else sorted(INDICATOR_CONFIG.keys())
-
-# 5. Sidebar - Parte Media (Configuración)
-with st.sidebar:
-    st.header("🛠️ Configuración & Edición")
     
-    # Pestañas limpias
+    st.header("🛠️ Configuración")
+    
+    # Fusión temporal para obtener columnas
+    if uploaded_file:
+        try:
+            df_temp = pd.read_excel(uploaded_file)
+            date_col = df_temp.columns[0]
+            user_cols = [c for c in df_temp.columns if c != date_col]
+        except: user_cols = []
+    else:
+        user_cols = []
+        
+    all_options = sorted(list(INDICATOR_CONFIG.keys()) + user_cols)
+    
     tab_edit, tab_add, tab_fmt = st.tabs(["EDIT LINE", "ADD LINE", "FORMAT"])
     
     with tab_edit:
         st.caption("Configurar Ejes")
-        if available_indicators:
-            y1_sel = st.selectbox("Eje Principal (Izq)", options=available_indicators, index=0)
-            idx_y2 = len(available_indicators)//2 if len(available_indicators) > 1 else 0
-            y2_sel = st.selectbox("Eje Secundario (Der)", options=["Ninguno"] + available_indicators, index=idx_y2)
+        if all_options:
+            y1_sel = st.selectbox("Eje Principal (Izq)", options=all_options, index=0)
+            y2_sel = st.selectbox("Eje Secundario (Der)", options=["Ninguno"] + all_options, index=0)
         else:
-            y1_sel, y2_sel = "Sin Datos", "Ninguno"
+            y1_sel = "Sin Datos"
+            y2_sel = "Ninguno"
         invert_y2 = st.checkbox("Invertir Eje Der.", value=True)
         
     with tab_add:
@@ -323,37 +322,93 @@ with st.sidebar:
 
     st.divider()
     
-    # 6. Sidebar - Parte Inferior (Gemini)
+    # 3. SECCIÓN IA AJUSTADA (ASERTIVIDAD Y CONCISIÓN)
     st.header("🤖 Analista IA")
     gemini_key = st.text_input("Gemini API Key:", type="password")
+    
     if gemini_key:
         genai.configure(api_key=gemini_key)
         st.success("Conectado")
+        
+        with st.expander("Instrucción para la IA"):
+            # NUEVO PROMPT ASERTIVO Y DIRECTO
+            default_prompt = (
+                "Eres un estratega macroeconómico senior de XTB. "
+                "REGLAS OBLIGATORIAS: "
+                "1. SÉ BREVE Y CONCISO. Elimina saludos, cortesías y texto de relleno. "
+                "2. NO DIGAS 'Estimado cliente'. Ve directo al análisis. "
+                "3. SÉ ASERTIVO. No uses frases como 'esto sugiere' o 'podría deberse a'. "
+                "AFIRMA las causas históricas con seguridad (ej: 'La caída de 2020 FUE por el impacto del COVID-19'). "
+                "Usa los datos proporcionados como base, pero complétalos con tu conocimiento externo para explicar el POR QUÉ de los movimientos de forma contundente."
+            )
+            system_prompt = st.text_area("Rol del Asistente:", value=default_prompt, height=150)
 
 logo_b64 = get_local_logo_base64()
 
-# --- 8. VISUALIZACIÓN PRINCIPAL ---
+# 4. PROCESAMIENTO DE DATOS REAL
+df_full = df_fred.copy()
+if uploaded_file is not None:
+    try:
+        uploaded_file.seek(0)
+        df_user = pd.read_excel(uploaded_file)
+        date_col = df_user.columns[0]
+        df_user[date_col] = pd.to_datetime(df_user[date_col], errors='coerce')
+        df_user = df_user.dropna(subset=[date_col]).set_index(date_col).sort_index()
+        for c in df_user.columns:
+            df_user[c] = pd.to_numeric(df_user[c], errors='coerce')
+        df_user = df_user.select_dtypes(include=['number'])
+        
+        if not df_full.empty:
+            df_full = df_full.join(df_user, how='outer').sort_index()
+        else:
+            df_full = df_user
+            
+        st.sidebar.success(f"Excel: {len(df_user.columns)} series.")
+    except Exception as e:
+        st.sidebar.error(f"Error al procesar Excel: {e}")
+
+# --- 8. VISUALIZACIÓN ---
 if not df_full.empty and y1_sel != "Sin Datos":
     
-    # Chat Gemini (Opcional)
+    # CHATBOT
     if gemini_key:
         with st.sidebar:
             user_question = st.text_area("Preguntar a IA:", placeholder="¿Qué ves en el gráfico?")
             if st.button("Analizar"):
                 if user_question:
-                    with st.spinner("Pensando..."):
+                    with st.spinner("Analizando..."):
                         try:
-                            model = genai.GenerativeModel('gemini-pro') 
-                            prompt = f"Analiza: {user_question}. Datos: {df_full.tail(20).to_csv()}"
-                            res = model.generate_content(prompt)
-                            st.info(res.text)
-                        except: st.error("Error IA")
+                            # 1. Selección Modelo
+                            available_models = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
+                            target_model = next((m for m in available_models if 'flash' in m), None)
+                            if not target_model:
+                                target_model = next((m for m in available_models if 'pro' in m), available_models[0] if available_models else None)
+                            
+                            if not target_model:
+                                st.error("No hay modelos disponibles.")
+                            else:
+                                # 2. Datos
+                                data_context = df_full[[y1_sel]].dropna().tail(30).to_csv()
+                                model = genai.GenerativeModel(target_model)
+                                
+                                full_prompt = f"""
+                                INSTRUCCIÓN: {system_prompt}
+                                DATOS (CSV):
+                                {data_context}
+                                PREGUNTA: {user_question}
+                                """
+                                response = model.generate_content(full_prompt)
+                                st.info(response.text)
+                                st.caption(f"Modelo: {target_model}")
+                            
+                        except Exception as e:
+                            st.error(f"Error: {str(e)}")
 
-    # Gráfico
+    # GRÁFICO
     fig = create_pro_chart(df_full, y1_sel, y2_sel, invert_y2, logo_b64, config_visual)
     st.plotly_chart(fig, use_container_width=True)
     
-    # Tabla Histórica
+    # TABLA
     st.divider()
     meta_info = INDICATOR_CONFIG.get(y1_sel, {"type": "market"}) 
     is_user_data = y1_sel not in INDICATOR_CONFIG
@@ -392,7 +447,6 @@ if not df_full.empty and y1_sel != "Sin Datos":
 
         df_cal['Actual'] = df_cal['Actual'].apply(fmt_num_table)
         df_cal['Anterior'] = df_cal['Anterior'].apply(fmt_num_table)
-        
         df_display = df_cal[['Referencia', 'Publicación (Est.)', 'Actual', 'Anterior']].dropna(subset=['Anterior'])
 
         st.dataframe(
@@ -408,4 +462,4 @@ if not df_full.empty and y1_sel != "Sin Datos":
         st.caption(f"ℹ️ Tabla no disponible para datos de alta frecuencia ({y1_sel}).")
 
 else:
-    st.warning("No hay datos para mostrar. Verifique la API Key o cargue un archivo Excel.")
+    st.warning("Cargando datos o esperando archivo Excel...")
