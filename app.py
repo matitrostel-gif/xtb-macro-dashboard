@@ -47,7 +47,6 @@ st.markdown("""
         color: white;
     }
     
-    /* Separadores visuales */
     hr { margin-top: 5px; margin-bottom: 10px; border-color: #444; }
 </style>
 """, unsafe_allow_html=True)
@@ -126,16 +125,14 @@ def get_all_macro_data_long_history():
         df_calc = df_master.ffill() 
     return df_master
 
-# --- 6. FÁBRICA DE GRÁFICOS (CONFIGURACIÓN DUAL) ---
-def create_pro_chart(df, col1, col2=None, invert_y2=False, logo_data="", config_format=None):
+# --- 6. FÁBRICA DE GRÁFICOS ---
+def create_pro_chart(df, col1, col2=None, invert_y2=False, logo_data="", config_format=None, custom_source_label="Proprietary Data"):
     if config_format is None:
         config_format = {"color": "#002b49", "width": 2.5, "type": "Línea", "rec": True, "color_l2": "#5ca6e5", "width_l2": 2.0, "dash_l2": "dash"}
 
-    # Configuración L1
     COLOR_Y1 = config_format.get("color", "#002b49")
     WIDTH_Y1 = config_format.get("width", 2.5)
     
-    # Configuración L2
     COLOR_Y2 = config_format.get("color_l2", "#5ca6e5")
     WIDTH_Y2 = config_format.get("width_l2", 2.0)
     DASH_Y2 = config_format.get("dash_l2", "dash")
@@ -152,7 +149,7 @@ def create_pro_chart(df, col1, col2=None, invert_y2=False, logo_data="", config_
 
     first_valid_date = None
 
-    # EJE 1 (PRINCIPAL)
+    # EJE 1
     try:
         s1 = df[col1].dropna()
         if not s1.empty:
@@ -170,7 +167,7 @@ def create_pro_chart(df, col1, col2=None, invert_y2=False, logo_data="", config_
             fig.add_annotation(x=s1.index[-1], y=last_v1, text=f" {txt_val}", xref="x", yref="y1", xanchor="left", showarrow=False, font=dict(color="white", size=11, weight="bold"), bgcolor=COLOR_Y1, borderpad=4, opacity=0.9)
     except: pass
 
-    # EJE 2 (SECUNDARIO - PERSONALIZABLE)
+    # EJE 2
     if has_secondary:
         suffix2, fmt2 = get_format_settings(col2)
         try:
@@ -180,7 +177,6 @@ def create_pro_chart(df, col1, col2=None, invert_y2=False, logo_data="", config_
                 if first_valid_date is None or start_2 < first_valid_date: first_valid_date = start_2
                 last_v2 = s2.iloc[-1]
                 
-                # APLICAMOS CONFIGURACIÓN PERSONALIZADA PARA L2
                 fig.add_trace(go.Scatter(
                     x=s2.index, y=s2, name=col2, 
                     line=dict(color=COLOR_Y2, width=WIDTH_Y2, dash=DASH_Y2), 
@@ -239,15 +235,19 @@ def create_pro_chart(df, col1, col2=None, invert_y2=False, logo_data="", config_
                         v_e = min(e_dt, hoy_real)
                         fig.add_vrect(x0=v_s, x1=v_e, fillcolor="#e6e6e6", opacity=0.5, layer="below", line_width=0, yref="paper", y0=0, y1=1)
                 except: pass
-        
-    meta1 = INDICATOR_CONFIG.get(col1, {})
-    fred_id1 = meta1.get("fred_id", "External Data" if col1 not in INDICATOR_CONFIG else "N/A")
-    db_text = f"{fred_id1}" if col1 in INDICATOR_CONFIG else "Proprietary Data"
+    
+    # ETIQUETA DE FUENTE PERSONALIZADA
+    def get_source_label(c):
+        if c in INDICATOR_CONFIG:
+            return f"FRED {INDICATOR_CONFIG[c]['fred_id']}"
+        else:
+            return custom_source_label # Usar la etiqueta del usuario para datos propios
+
+    lbl1 = get_source_label(col1)
+    db_text = lbl1
     if has_secondary:
-        meta2 = INDICATOR_CONFIG.get(col2, {})
-        fred_id2 = meta2.get("fred_id", "External Data" if col2 not in INDICATOR_CONFIG else "N/A")
-        if fred_id2 != fred_id1: db_text += f", {fred_id2}"
-    if "UNRATE" in db_text or "DGS" in db_text: db_text = "FRED " + db_text
+        lbl2 = get_source_label(col2)
+        if lbl1 != lbl2: db_text += f", {lbl2}"
 
     fig.add_annotation(x=0, y=-0.14, text=f"Database: {db_text}", xref="paper", yref="paper", showarrow=False, font=dict(size=11, color="gray"), xanchor="left")
     fig.add_annotation(x=1, y=-0.14, text="Source: <b>XTB Research</b>", xref="paper", yref="paper", showarrow=False, font=dict(size=11, color="black"), xanchor="right")
@@ -318,10 +318,18 @@ with st.sidebar:
         
         user_cols_list.extend(df_to_merge.columns.tolist())
 
-    # SECCIÓN RENOMBRAR (PERSISTENTE)
+    # --- SECCIÓN VISIBLE DE OPCIONES DE EXCEL (NO ESCONDIDA) ---
+    custom_db_label = "Proprietary Data" # Valor por defecto
+    
     if user_cols_list:
         st.markdown("---")
-        with st.expander("📝 Renombrar Series Cargadas"):
+        st.markdown("### 📝 Opciones de Excel")
+        
+        # 1. INPUT DE FUENTE (AQUÍ ESTÁ, VISIBLE)
+        custom_db_label = st.text_input("🏷️ Nombre de la Fuente (Pie de página):", value="Datos Propios", help="Cambia el texto 'Database: ...'")
+        
+        # 2. RENOMBRAR COLUMNAS (EXPANDIBLE)
+        with st.expander("Renombrar Columnas"):
             rename_map = {}
             for col in user_cols_list:
                 new_n = st.text_input(f"Renombrar '{col}':", value=col, key=f"ren_{col}")
@@ -413,7 +421,8 @@ if not df_full.empty and y1_sel != "Sin Datos":
                             else: st.error("No hay modelos.")
                         except Exception as e: st.error(f"Error: {e}")
 
-    fig = create_pro_chart(df_full, y1_sel, y2_sel, invert_y2, logo_b64, config_visual)
+    # PASAR ETIQUETA PERSONALIZADA
+    fig = create_pro_chart(df_full, y1_sel, y2_sel, invert_y2, logo_b64, config_visual, custom_source_label=custom_db_label)
     st.plotly_chart(fig, use_container_width=True)
     
     st.divider()
