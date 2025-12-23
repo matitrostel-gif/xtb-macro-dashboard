@@ -16,7 +16,8 @@ st.markdown("""
 <style>
     .block-container {padding-top: 1rem; padding-bottom: 3rem;}
     h1, h2, h3, h4, p, div {font-family: 'Arial', sans-serif;}
-    .modebar {display: none !important;}
+    
+    /* SE ELIMINÓ LA LÍNEA QUE OCULTABA LA BARRA DE HERRAMIENTAS */
     
     .stSelectbox label, .stNumberInput label, .stCheckbox label, .stTextInput label, .stTextArea label, .stColorPicker label, .stSlider label {
         color: #EAEAEA !important; 
@@ -236,12 +237,9 @@ def create_pro_chart(df, col1, col2=None, invert_y2=False, logo_data="", config_
                         fig.add_vrect(x0=v_s, x1=v_e, fillcolor="#e6e6e6", opacity=0.5, layer="below", line_width=0, yref="paper", y0=0, y1=1)
                 except: pass
     
-    # ETIQUETA DE FUENTE PERSONALIZADA
     def get_source_label(c):
-        if c in INDICATOR_CONFIG:
-            return f"FRED {INDICATOR_CONFIG[c]['fred_id']}"
-        else:
-            return custom_source_label # Usar la etiqueta del usuario para datos propios
+        if c in INDICATOR_CONFIG: return f"FRED {INDICATOR_CONFIG[c]['fred_id']}"
+        else: return custom_source_label
 
     lbl1 = get_source_label(col1)
     db_text = lbl1
@@ -278,7 +276,6 @@ with st.sidebar:
                 date_col = df_temp.columns[0]
                 df_temp[date_col] = pd.to_datetime(df_temp[date_col], errors='coerce')
                 df_temp = df_temp.dropna(subset=[date_col]).set_index(date_col).sort_index()
-                
                 for c in df_temp.columns:
                     df_temp[c] = pd.to_numeric(df_temp[c], errors='coerce')
                 df_temp = df_temp.select_dtypes(include=['number'])
@@ -288,7 +285,6 @@ with st.sidebar:
             except Exception as e:
                 st.error(f"Error: {e}")
 
-    # LISTAR Y LIMPIAR
     if st.session_state['user_databases']:
         st.caption("📚 Archivos activos:")
         for name in st.session_state['user_databases']:
@@ -303,8 +299,6 @@ with st.sidebar:
     
     for filename, df_u in st.session_state['user_databases'].items():
         df_to_merge = df_u.copy()
-        
-        # Anti-colisión
         cols_map = {}
         for c in df_to_merge.columns:
             if c in df_full.columns or "Unnamed" in str(c):
@@ -315,29 +309,22 @@ with st.sidebar:
             df_full = df_full.join(df_to_merge, how='outer').sort_index()
         else:
             df_full = df_to_merge
-        
         user_cols_list.extend(df_to_merge.columns.tolist())
 
-    # --- SECCIÓN VISIBLE DE OPCIONES DE EXCEL (NO ESCONDIDA) ---
-    custom_db_label = "Proprietary Data" # Valor por defecto
+    # --- VISIBLE: OPCIONES EXCEL ---
+    custom_db_label = "Proprietary Data"
     
     if user_cols_list:
         st.markdown("---")
         st.markdown("### 📝 Opciones de Excel")
-        
-        # 1. INPUT DE FUENTE (AQUÍ ESTÁ, VISIBLE)
         custom_db_label = st.text_input("🏷️ Nombre de la Fuente (Pie de página):", value="Datos Propios", help="Cambia el texto 'Database: ...'")
         
-        # 2. RENOMBRAR COLUMNAS (EXPANDIBLE)
         with st.expander("Renombrar Columnas"):
             rename_map = {}
             for col in user_cols_list:
                 new_n = st.text_input(f"Renombrar '{col}':", value=col, key=f"ren_{col}")
-                if new_n != col:
-                    rename_map[col] = new_n
-            
-            if rename_map:
-                df_full = df_full.rename(columns=rename_map)
+                if new_n != col: rename_map[col] = new_n
+            if rename_map: df_full = df_full.rename(columns=rename_map)
 
     st.divider()
     st.header("🛠️ Configuración")
@@ -389,8 +376,6 @@ with st.sidebar:
         }
 
     st.divider()
-    
-    # IA
     st.header("🤖 Analista IA")
     gemini_key = st.text_input("Gemini API Key:", type="password")
     
@@ -421,9 +406,23 @@ if not df_full.empty and y1_sel != "Sin Datos":
                             else: st.error("No hay modelos.")
                         except Exception as e: st.error(f"Error: {e}")
 
-    # PASAR ETIQUETA PERSONALIZADA
+    # --- CONFIGURACIÓN DE DESCARGA JPG (VISIBILIDAD BARRA RESTAURADA) ---
     fig = create_pro_chart(df_full, y1_sel, y2_sel, invert_y2, logo_b64, config_visual, custom_source_label=custom_db_label)
-    st.plotly_chart(fig, use_container_width=True)
+    
+    st.plotly_chart(fig, use_container_width=True, config={
+        'displayModeBar': True, # Asegura que se vea
+        'displaylogo': False,
+        'modeBarButtonsToRemove': ['zoom', 'pan', 'select', 'lasso2d'],
+        'toImageButtonOptions': {
+            'format': 'jpeg',
+            'filename': f'grafico_xtb_{y1_sel}',
+            'height': 720,
+            'width': 1280,
+            'scale': 2
+        }
+    })
+    
+    st.caption("📸 Tip: Usa el icono de cámara en la esquina del gráfico para descargar en JPG alta calidad.")
     
     st.divider()
     # TABLA
