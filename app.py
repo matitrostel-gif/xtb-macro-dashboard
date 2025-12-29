@@ -6,7 +6,7 @@ from plotly.subplots import make_subplots
 import datetime
 from datetime import timedelta
 import base64
-import os
+import os # Importación crítica
 import requests 
 import google.generativeai as genai
 
@@ -17,20 +17,41 @@ st.markdown("""
 <style>
     .block-container {padding-top: 1rem; padding-bottom: 3rem;}
     h1, h2, h3, h4, p, div {font-family: 'Arial', sans-serif;}
+    
     .stSelectbox label, .stNumberInput label, .stCheckbox label, .stTextInput label, .stTextArea label, .stColorPicker label, .stSlider label {
-        color: #EAEAEA !important; font-weight: bold; font-size: 13px;
+        color: #EAEAEA !important; 
+        font-weight: bold;
+        font-size: 13px;
     }
     div[data-testid="stCheckbox"] { margin-top: 5px; }
     [data-testid="stDataFrame"] { font-family: 'Arial', sans-serif; }
-    [data-testid="stFileUploader"] { padding: 10px; border: 1px dashed #4a4a4a; border-radius: 5px; margin-bottom: 15px; }
+    
+    [data-testid="stFileUploader"] {
+        padding: 10px;
+        border: 1px dashed #4a4a4a;
+        border-radius: 5px;
+        margin-bottom: 15px;
+    }
+    
     .stTabs [data-baseweb="tab-list"] { gap: 2px; }
-    .stTabs [data-baseweb="tab"] { padding: 6px 10px; font-size: 12px; background-color: #262730; color: #ffffff; border-radius: 4px 4px 0px 0px; flex-grow: 1; }
-    .stTabs [aria-selected="true"] { background-color: #ff4b4b; color: white; }
+    .stTabs [data-baseweb="tab"] {
+        padding: 6px 10px;
+        font-size: 12px;
+        background-color: #262730;
+        color: #ffffff;
+        border-radius: 4px 4px 0px 0px;
+        flex-grow: 1;
+    }
+    .stTabs [aria-selected="true"] {
+        background-color: #ff4b4b;
+        color: white;
+    }
+    
     hr { margin-top: 5px; margin-bottom: 10px; border-color: #444; }
 </style>
 """, unsafe_allow_html=True)
 
-# --- 2. CONFIGURACIÓN MAESTRA (ESTRATEGIA ÍNDICE) ---
+# --- 2. CONFIGURACIÓN MAESTRA ---
 INDICATOR_CONFIG = {
     # --- EE.UU (FRED) ---
     "US Tasa Desempleo": {"id": "UNRATE", "src": "fred", "type": "macro", "is_percent": True, "units": "lin"},
@@ -42,29 +63,33 @@ INDICATOR_CONFIG = {
     "US Bono 10Y": {"id": "DGS10", "src": "fred", "type": "market", "is_percent": True, "units": "lin"},
     "US VIX": {"id": "VIXCLS", "src": "fred", "type": "market", "is_percent": False, "units": "lin"},
     
-    # --- CHILE (BCCh) - CÓDIGOS OFICIALES ---
-    # Mercado (Valores directos)
+    # --- CHILE (BCCh) ---
     "CL Dólar Observado": {"id": "F073.TCO.PRE.Z.D", "src": "bcch", "type": "market", "is_percent": False},
     "CL UF": {"id": "F073.UFF.PRE.Z.D", "src": "bcch", "type": "market", "is_percent": False},
-    "CL Tasa Política Monetaria (TPM)": {"id": "F022.TPM.TIN.D001.NO.Z.D", "src": "bcch", "type": "market", "is_percent": True},
+    "CL Tasa Política Monetaria (TPM)": {"id": "F021.TPM.TAS.Z.D", "src": "bcch", "type": "market", "is_percent": True},
     
-    # Macro (Indices -> Calculamos Variación % nosotros)
-    "CL IMACEC (Var 12m)": {"id": "F032.IMC.IND.Z.Z.EP18.Z.Z.0.M", "src": "bcch", "type": "macro", "is_percent": True, "calc_yoy": True},
-    "CL IPC (Var 12m)": {"id": "G073.IPC.IND.2018.M", "src": "bcch", "type": "macro", "is_percent": True, "calc_yoy": True},
-    "CL PIB (Var 12m)": {"id": "F032.PIB.CLP.VR.Z.T", "src": "bcch", "type": "macro", "is_percent": True} # PIB Trimestral suele venir ya calculado
+    # Macro Chile (Cálculo Automático)
+    "CL IMACEC (Var 12m)": {"id": "F019.IMC.IND.Z.Z", "src": "bcch", "type": "macro", "is_percent": True, "calc_yoy": True},
+    "CL PIB (Var 12m)": {"id": "F032.PIB.CLP.VR.Z.T", "src": "bcch", "type": "macro", "is_percent": True}, 
+    "CL IPC (Var 12m)": {"id": "F074.IPC.IND.Z.Z", "src": "bcch", "type": "macro", "is_percent": True, "calc_yoy": True},
 }
 
-# --- 3. UTILIDADES ---
+# --- 3. UTILIDADES (LOGO FIX PARA TU ARCHIVO) ---
 def get_local_logo_base64():
-    try:
-        script_dir = os.path.dirname(os.path.abspath(__file__))
-        for filename in ["logo.png", "logo.jpg", "logo.jpeg"]:
-            full_path = os.path.join(script_dir, filename)
-            if os.path.exists(full_path):
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    # Agregamos 'logo.png.png' a la lista de búsqueda
+    possible_names = ["logo.png", "logo.jpg", "logo.jpeg", "logo.png.png"]
+    
+    for filename in possible_names:
+        full_path = os.path.join(script_dir, filename)
+        if os.path.exists(full_path):
+            try:
                 with open(full_path, "rb") as f:
                     return f"data:image/{'png' if 'png' in filename else 'jpeg'};base64,{base64.b64encode(f.read()).decode()}"
-    except: pass
-    return ""
+            except: continue
+    
+    # Fallback URL si falla lo local
+    return "https://upload.wikimedia.org/wikipedia/commons/thumb/5/52/XTB_logo_2022.svg/512px-XTB_logo_2022.svg.png"
 
 logo_b64 = get_local_logo_base64()
 
@@ -102,7 +127,7 @@ def get_fred_data(api_key):
     return df
 
 @st.cache_data(ttl=3600)
-def get_bcch_data(user, password, debug=False):
+def get_bcch_data(user, password):
     if not user or not password: return pd.DataFrame()
     df_bcch = pd.DataFrame()
     yr_start = "2010"
@@ -113,13 +138,10 @@ def get_bcch_data(user, password, debug=False):
     for name, config in bcch_indicators.items():
         try:
             url = f"https://si3.bcentral.cl/SieteRestWS/SieteRestWS.ashx?user={user}&pass={password}&firstdate={yr_start}-01-01&lastdate={yr_end}-12-31&timeseries={config['id']}&function=GetSeries"
-            res = requests.get(url, timeout=15)
+            res = requests.get(url, timeout=10)
             
             if res.status_code == 200:
                 data = res.json()
-                if debug and data.get('Kode') != 0:
-                    st.sidebar.warning(f"⚠️ {name}: {data.get('Message')}")
-                
                 if 'Series' in data and 'Obs' in data['Series']:
                     obs = data['Series']['Obs']
                     if obs:
@@ -127,12 +149,9 @@ def get_bcch_data(user, password, debug=False):
                         temp['indexDateString'] = pd.to_datetime(temp['indexDateString'], dayfirst=True, errors='coerce')
                         temp['value'] = temp['value'].astype(str).str.replace(',', '.', regex=False)
                         temp['value'] = pd.to_numeric(temp['value'], errors='coerce')
-                        
                         temp = temp.dropna().set_index('indexDateString')[['value']].rename(columns={'value': name})
                         
-                        # --- CÁLCULO ESTRATÉGICO DE VARIACIÓN ---
                         if config.get("calc_yoy", False):
-                            # Si descargamos el índice (ej: 120 pts), calculamos el cambio anual
                             temp = temp.pct_change(12) * 100
                             temp = temp.dropna()
 
@@ -140,11 +159,7 @@ def get_bcch_data(user, password, debug=False):
                         
                         if df_bcch.empty: df_bcch = temp
                         else: df_bcch = df_bcch.join(temp, how='outer')
-            elif debug: st.sidebar.error(f"❌ {name}: HTTP {res.status_code}")
-        except Exception as e:
-            if debug: st.sidebar.error(f"Error {name}: {e}")
-            continue
-            
+        except Exception: continue
     return df_bcch
 
 # --- 5. FÁBRICA DE GRÁFICOS ---
@@ -168,6 +183,7 @@ def create_pro_chart(df, col1, col2=None, invert_y2=False, logo_data="", config_
     fig = make_subplots(specs=[[{"secondary_y": has_secondary}]])
     hover_fmt = "%{x|%A, %b %d, %Y}"
 
+    # INICIALIZACIÓN OBLIGATORIA (EVITA ERROR UNBOUND)
     first_valid_date = pd.Timestamp("2000-01-01") 
 
     # EJE 1
@@ -194,7 +210,9 @@ def create_pro_chart(df, col1, col2=None, invert_y2=False, logo_data="", config_
             s2 = df[col2].dropna()
             if not s2.empty:
                 start_2 = s2.index[0]
-                if start_2 < first_valid_date: first_valid_date = start_2
+                if start_2 < first_valid_date:
+                    first_valid_date = start_2
+                
                 last_v2 = s2.iloc[-1]
                 fig.add_trace(go.Scatter(x=s2.index, y=s2, name=col2, line=dict(color=COLOR_Y2, width=WIDTH_Y2, dash=DASH_Y2), mode='lines', hovertemplate=f"<b>{col2}</b><br>{hover_fmt}: %{{y:,.2f}}{suffix2}<extra></extra>"), secondary_y=True)
                 txt_val2 = f"{last_v2:,.2f}{suffix2}" if suffix2 == "%" else f"{last_v2:,.2f}"
@@ -212,14 +230,17 @@ def create_pro_chart(df, col1, col2=None, invert_y2=False, logo_data="", config_
         images=[dict(source=logo_data, xref="paper", yref="paper", x=1, y=1.22, sizex=0.12, sizey=0.12, xanchor="right", yanchor="top")]
     )
     
+    # --- RANGO DE TIEMPO (1M Y 10Y AGREGADOS) ---
     fig.update_xaxes(
         range=[first_valid_date, hoy_real], 
         showgrid=False, linecolor="#333", linewidth=2, tickfont=dict(color="#333", size=12), ticks="outside",
         rangeselector=dict(
             buttons=list([
+                dict(count=1, label="1M", step="month", stepmode="backward"), # 1 Mes
                 dict(count=6, label="6M", step="month", stepmode="backward"),
                 dict(count=1, label="1Y", step="year", stepmode="backward"), 
                 dict(count=5, label="5Y", step="year", stepmode="backward"),
+                dict(count=10, label="10Y", step="year", stepmode="backward"), # 10 Años
                 dict(step="all", label="Max")
             ]),
             bgcolor="white", activecolor="#e6e6e6", x=0, y=1, xanchor='left', yanchor='bottom', font=dict(size=11, color="#333333") 
@@ -264,6 +285,7 @@ st.title("XTB Research Macro Dashboard")
 
 # === SIDEBAR ===
 with st.sidebar:
+    
     # 1. DATOS PROPIOS
     with st.expander("📂 Datos Propios (Excel)", expanded=True):
         uploaded_file = st.file_uploader("Subir archivo .xlsx", type=["xlsx"])
@@ -296,8 +318,6 @@ with st.sidebar:
         st.caption("Banco Central de Chile")
         bcch_user = st.text_input("Usuario:", help="Rut/Correo")
         bcch_pass = st.text_input("Password:", type="password")
-        # DEBUG MODE (DESACTIVADO PARA LIMPIEZA)
-        debug_bcch = st.checkbox("Modo Diagnóstico", value=False)
 
     # 3. ANALISTA IA
     with st.expander("🤖 Analista IA", expanded=False):
@@ -308,7 +328,7 @@ with st.sidebar:
 
 # --- CARGA DATOS ---
 df_fred = get_fred_data(fred_key)
-df_bcch = get_bcch_data(bcch_user, bcch_pass, debug_bcch)
+df_bcch = get_bcch_data(bcch_user, bcch_pass) 
 
 df_repo = pd.DataFrame()
 if not df_fred.empty: df_repo = df_fred
@@ -318,7 +338,6 @@ if not df_bcch.empty:
 
 df_full = df_repo.copy()
 user_cols_list = []
-# FUSIÓN EXCEL ROBUSTA
 for filename, df_u in st.session_state['user_databases'].items():
     df_to_merge = df_u.copy()
     new_cols = {}
@@ -340,16 +359,16 @@ if user_cols_list:
             if new_n != col: df_full = df_full.rename(columns={col: new_n})
 
 # --- CONFIGURACION GRAFICO ---
+# LISTA DE OPCIONES FORZADA
+all_opts = sorted(list(set(list(INDICATOR_CONFIG.keys()) + list(df_full.columns))))
+
 with st.sidebar:
     st.divider()
     with st.expander("🛠️ Config. Gráfico", expanded=True):
-        if not df_full.empty: all_opts = sorted(df_full.columns.tolist())
-        else: all_opts = sorted(INDICATOR_CONFIG.keys())
-        
         tab1, tab2, tab3 = st.tabs(["EJE 1", "EJE 2", "ESTILO"])
-        with tab1: y1_sel = st.selectbox("Principal", options=all_opts) if all_opts else "Sin Datos"
+        with tab1: y1_sel = st.selectbox("Principal", options=all_opts, index=0)
         with tab2: 
-            y2_sel = st.selectbox("Secundario", options=["Ninguno"] + all_opts) if all_opts else "Ninguno"
+            y2_sel = st.selectbox("Secundario", options=["Ninguno"] + all_opts, index=0)
             invert_y2 = st.checkbox("Invertir", value=True)
         with tab3:
             col1 = st.color_picker("Color 1", "#002b49")
@@ -371,15 +390,21 @@ if not df_full.empty and y1_sel != "Sin Datos":
                 avail = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
                 t_model = next((m for m in avail if 'flash' in m), next((m for m in avail if 'pro' in m), None))
                 if t_model:
-                    d_csv = df_full[[y1_sel]].dropna().tail(30).to_csv()
-                    mod = genai.GenerativeModel(t_model)
-                    res = mod.generate_content(f"SISTEMA: {system_prompt}\nDATOS: {d_csv}\nPREGUNTA: {user_question}")
-                    st.sidebar.info(res.text)
+                    if y1_sel in df_full.columns:
+                        d_csv = df_full[[y1_sel]].dropna().tail(30).to_csv()
+                        mod = genai.GenerativeModel(t_model)
+                        res = mod.generate_content(f"SISTEMA: {system_prompt}\nDATOS: {d_csv}\nPREGUNTA: {user_question}")
+                        st.sidebar.info(res.text)
+                    else: st.sidebar.warning("No hay datos para analizar.")
             except Exception as e: st.sidebar.error(f"Error IA: {e}")
 
-    fig = create_pro_chart(df_full, y1_sel, y2_sel, invert_y2, logo_b64, config_visual, custom_source_label=custom_db_label)
-    st.plotly_chart(fig, use_container_width=True, config={'toImageButtonOptions': {'format': 'jpeg', 'filename': 'grafico_xtb', 'scale': 2}})
-    
+    # CHART
+    if y1_sel in df_full.columns or (y2_sel != "Ninguno" and y2_sel in df_full.columns):
+        fig = create_pro_chart(df_full, y1_sel, y2_sel, invert_y2, logo_b64, config_visual, custom_source_label=custom_db_label)
+        st.plotly_chart(fig, use_container_width=True, config={'toImageButtonOptions': {'format': 'jpeg', 'filename': 'grafico_xtb', 'scale': 2}})
+    else:
+        st.info("💡 Los datos están cargando o no están disponibles. Verifique sus claves.")
+
     st.divider()
     
     # --- LOGICA TABLA: MACRO vs MERCADO ---
@@ -387,19 +412,24 @@ if not df_full.empty and y1_sel != "Sin Datos":
     is_excel = y1_sel not in INDICATOR_CONFIG
     is_macro = (meta.get("type") == "macro") or is_excel
     
-    if is_macro:
+    if is_macro and y1_sel in df_full.columns:
         st.subheader(f"📅 Histórico: {y1_sel}")
         start_dt_table = pd.to_datetime("2020-01-01")
         df_view = df_full[df_full.index >= start_dt_table].copy()
         
         df_cal = df_view[[y1_sel]].dropna().sort_index(ascending=False)
         df_cal['Anterior'] = df_cal[y1_sel].shift(-1)
+        
+        df_cal.index.name = 'Fecha_Base'
         df_cal = df_cal.reset_index()
         
-        df_cal.columns = ['Fecha_Base', 'Actual', 'Anterior']
-        df_cal['Referencia'] = df_cal['Fecha_Base'].dt.month.apply(get_month_name) + " " + df_cal['Fecha_Base'].dt.year.astype(str)
+        df_cal['Mes_Ref'] = df_cal['Fecha_Base'].dt.month
+        df_cal['Referencia'] = df_cal['Mes_Ref'].apply(get_month_name) + " " + df_cal['Fecha_Base'].dt.year.astype(str)
         df_cal['Fecha_Pub'] = df_cal['Fecha_Base'] + pd.DateOffset(months=1)
-        df_cal['Publicación (Est.)'] = df_cal['Fecha_Pub'].dt.month.apply(get_month_name) + " " + df_cal['Fecha_Pub'].dt.year.astype(str)
+        df_cal['Mes_Pub'] = df_cal['Fecha_Pub'].dt.month
+        df_cal['Publicación (Est.)'] = df_cal['Mes_Pub'].apply(get_month_name) + " " + df_cal['Fecha_Pub'].dt.year.astype(str)
+        
+        df_cal = df_cal.rename(columns={y1_sel: 'Actual'})
         
         is_pct = meta.get("is_percent", False)
         def fmt(x): 
@@ -413,7 +443,14 @@ if not df_full.empty and y1_sel != "Sin Datos":
         
         st.dataframe(
             df_cal[['Referencia', 'Publicación (Est.)', 'Actual', 'Anterior']].dropna(subset=['Anterior']),
-            hide_index=True, use_container_width=True
+            hide_index=True, 
+            use_container_width=True,
+            column_config={
+                "Referencia": st.column_config.TextColumn("Referencia", width="medium"),
+                "Publicación (Est.)": st.column_config.TextColumn("Publicación (Est.)", width="medium"),
+                "Actual": st.column_config.TextColumn("Dato Actual", width="small"),
+                "Anterior": st.column_config.TextColumn("Dato Anterior", width="small")
+            }
         )
     else:
         st.caption(f"ℹ️ Tabla no disponible para datos de alta frecuencia ({y1_sel}).")
