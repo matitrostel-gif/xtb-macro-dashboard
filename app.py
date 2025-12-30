@@ -6,7 +6,7 @@ from plotly.subplots import make_subplots
 import datetime
 from datetime import timedelta
 import base64
-import os # Importación crítica
+import os
 import requests 
 import google.generativeai as genai
 
@@ -17,36 +17,15 @@ st.markdown("""
 <style>
     .block-container {padding-top: 1rem; padding-bottom: 3rem;}
     h1, h2, h3, h4, p, div {font-family: 'Arial', sans-serif;}
-    
     .stSelectbox label, .stNumberInput label, .stCheckbox label, .stTextInput label, .stTextArea label, .stColorPicker label, .stSlider label {
-        color: #EAEAEA !important; 
-        font-weight: bold;
-        font-size: 13px;
+        color: #EAEAEA !important; font-weight: bold; font-size: 13px;
     }
     div[data-testid="stCheckbox"] { margin-top: 5px; }
     [data-testid="stDataFrame"] { font-family: 'Arial', sans-serif; }
-    
-    [data-testid="stFileUploader"] {
-        padding: 10px;
-        border: 1px dashed #4a4a4a;
-        border-radius: 5px;
-        margin-bottom: 15px;
-    }
-    
+    [data-testid="stFileUploader"] { padding: 10px; border: 1px dashed #4a4a4a; border-radius: 5px; margin-bottom: 15px; }
     .stTabs [data-baseweb="tab-list"] { gap: 2px; }
-    .stTabs [data-baseweb="tab"] {
-        padding: 6px 10px;
-        font-size: 12px;
-        background-color: #262730;
-        color: #ffffff;
-        border-radius: 4px 4px 0px 0px;
-        flex-grow: 1;
-    }
-    .stTabs [aria-selected="true"] {
-        background-color: #ff4b4b;
-        color: white;
-    }
-    
+    .stTabs [data-baseweb="tab"] { padding: 6px 10px; font-size: 12px; background-color: #262730; color: #ffffff; border-radius: 4px 4px 0px 0px; flex-grow: 1; }
+    .stTabs [aria-selected="true"] { background-color: #ff4b4b; color: white; }
     hr { margin-top: 5px; margin-bottom: 10px; border-color: #444; }
 </style>
 """, unsafe_allow_html=True)
@@ -64,22 +43,20 @@ INDICATOR_CONFIG = {
     "US VIX": {"id": "VIXCLS", "src": "fred", "type": "market", "is_percent": False, "units": "lin"},
     
     # --- CHILE (BCCh) ---
-    "CL Dólar Observado": {"id": "F073.TCO.PRE.Z.D", "src": "bcch", "type": "market", "is_percent": False},
-    "CL UF": {"id": "F073.UFF.PRE.Z.D", "src": "bcch", "type": "market", "is_percent": False},
-    "CL Tasa Política Monetaria (TPM)": {"id": "F021.TPM.TAS.Z.D", "src": "bcch", "type": "market", "is_percent": True},
+    "CL Dólar Observado": {"ids": ["F073.TCO.PRE.Z.D", "F073.TCO.PRE.Z.M"], "src": "bcch", "type": "market", "is_percent": False},
+    "CL UF": {"ids": ["F073.UFF.PRE.Z.D", "F073.UFF.PRE.Z.M"], "src": "bcch", "type": "market", "is_percent": False},
+    "CL Tasa Política Monetaria (TPM)": {"ids": ["F021.TMP.TPM.D", "F021.TPM.TAS.Z.D", "F022.TPM.TIN.D001.NO.Z.D"], "src": "bcch", "type": "market", "is_percent": True},
     
-    # Macro Chile (Cálculo Automático)
-    "CL IMACEC (Var 12m)": {"id": "F019.IMC.IND.Z.Z", "src": "bcch", "type": "macro", "is_percent": True, "calc_yoy": True},
-    "CL PIB (Var 12m)": {"id": "F032.PIB.CLP.VR.Z.T", "src": "bcch", "type": "macro", "is_percent": True}, 
-    "CL IPC (Var 12m)": {"id": "F074.IPC.IND.Z.Z", "src": "bcch", "type": "macro", "is_percent": True, "calc_yoy": True},
+    # Macro Chile
+    "CL IMACEC (Var 12m)": {"ids": ["F019.IMC.IND.Z.Z", "F019.IEC.P.VAR.Z.Z"], "src": "bcch", "type": "macro", "is_percent": True, "calc_yoy_if_index": True},
+    "CL PIB (Var 12m)": {"ids": ["F032.PIB.CLP.VR.Z.T", "F032.PIB.VAR.Z.Z"], "src": "bcch", "type": "macro", "is_percent": True}, 
+    "CL IPC (Var 12m)": {"ids": ["F074.IPC.IND.Z.Z", "G073.IPC.IND.2018.M"], "src": "bcch", "type": "macro", "is_percent": True, "calc_yoy_if_index": True},
 }
 
-# --- 3. UTILIDADES (LOGO FIX PARA TU ARCHIVO) ---
+# --- 3. UTILIDADES ---
 def get_local_logo_base64():
     script_dir = os.path.dirname(os.path.abspath(__file__))
-    # Agregamos 'logo.png.png' a la lista de búsqueda
-    possible_names = ["logo.png", "logo.jpg", "logo.jpeg", "logo.png.png"]
-    
+    possible_names = ["logo.png.png", "logo.png", "logo.jpg", "logo.jpeg"]
     for filename in possible_names:
         full_path = os.path.join(script_dir, filename)
         if os.path.exists(full_path):
@@ -87,8 +64,6 @@ def get_local_logo_base64():
                 with open(full_path, "rb") as f:
                     return f"data:image/{'png' if 'png' in filename else 'jpeg'};base64,{base64.b64encode(f.read()).decode()}"
             except: continue
-    
-    # Fallback URL si falla lo local
     return "https://upload.wikimedia.org/wikipedia/commons/thumb/5/52/XTB_logo_2022.svg/512px-XTB_logo_2022.svg.png"
 
 logo_b64 = get_local_logo_base64()
@@ -130,36 +105,39 @@ def get_fred_data(api_key):
 def get_bcch_data(user, password):
     if not user or not password: return pd.DataFrame()
     df_bcch = pd.DataFrame()
-    yr_start = "2010"
+    yr_start = "2000" 
     yr_end = str(datetime.datetime.now().year)
     
     bcch_indicators = {k: v for k, v in INDICATOR_CONFIG.items() if v.get("src") == "bcch"}
     
     for name, config in bcch_indicators.items():
-        try:
-            url = f"https://si3.bcentral.cl/SieteRestWS/SieteRestWS.ashx?user={user}&pass={password}&firstdate={yr_start}-01-01&lastdate={yr_end}-12-31&timeseries={config['id']}&function=GetSeries"
-            res = requests.get(url, timeout=10)
-            
-            if res.status_code == 200:
-                data = res.json()
-                if 'Series' in data and 'Obs' in data['Series']:
-                    obs = data['Series']['Obs']
-                    if obs:
-                        temp = pd.DataFrame(obs)
-                        temp['indexDateString'] = pd.to_datetime(temp['indexDateString'], dayfirst=True, errors='coerce')
-                        temp['value'] = temp['value'].astype(str).str.replace(',', '.', regex=False)
-                        temp['value'] = pd.to_numeric(temp['value'], errors='coerce')
-                        temp = temp.dropna().set_index('indexDateString')[['value']].rename(columns={'value': name})
-                        
-                        if config.get("calc_yoy", False):
-                            temp = temp.pct_change(12) * 100
-                            temp = temp.dropna()
+        codes = config.get("ids", [])
+        for code in codes:
+            try:
+                url = f"https://si3.bcentral.cl/SieteRestWS/SieteRestWS.ashx?user={user}&pass={password}&firstdate={yr_start}-01-01&lastdate={yr_end}-12-31&timeseries={code}&function=GetSeries"
+                res = requests.get(url, timeout=10)
+                
+                if res.status_code == 200:
+                    data = res.json()
+                    if 'Series' in data and 'Obs' in data['Series']:
+                        obs = data['Series']['Obs']
+                        if obs:
+                            temp = pd.DataFrame(obs)
+                            temp['indexDateString'] = pd.to_datetime(temp['indexDateString'], dayfirst=True, errors='coerce')
+                            temp['value'] = temp['value'].astype(str).str.replace(',', '.', regex=False)
+                            temp['value'] = pd.to_numeric(temp['value'], errors='coerce')
+                            temp = temp.dropna().set_index('indexDateString')[['value']].rename(columns={'value': name})
+                            
+                            if config.get("calc_yoy_if_index", False) and "IND" in code:
+                                temp = temp.pct_change(12) * 100
+                                temp = temp.dropna()
 
-                        temp = temp[~temp.index.duplicated(keep='last')]
-                        
-                        if df_bcch.empty: df_bcch = temp
-                        else: df_bcch = df_bcch.join(temp, how='outer')
-        except Exception: continue
+                            temp = temp[~temp.index.duplicated(keep='last')]
+                            
+                            if df_bcch.empty: df_bcch = temp
+                            else: df_bcch = df_bcch.join(temp, how='outer')
+                            break 
+            except: continue
     return df_bcch
 
 # --- 5. FÁBRICA DE GRÁFICOS ---
@@ -183,7 +161,6 @@ def create_pro_chart(df, col1, col2=None, invert_y2=False, logo_data="", config_
     fig = make_subplots(specs=[[{"secondary_y": has_secondary}]])
     hover_fmt = "%{x|%A, %b %d, %Y}"
 
-    # INICIALIZACIÓN OBLIGATORIA (EVITA ERROR UNBOUND)
     first_valid_date = pd.Timestamp("2000-01-01") 
 
     # EJE 1
@@ -227,20 +204,20 @@ def create_pro_chart(df, col1, col2=None, invert_y2=False, logo_data="", config_
         plot_bgcolor="white", paper_bgcolor="white", height=650,
         margin=dict(t=120, r=80, l=80, b=100), showlegend=True,
         legend=dict(orientation="h", y=1.15, x=0, xanchor='left', bgcolor="rgba(0,0,0,0)", font=dict(color="#333")),
-        images=[dict(source=logo_data, xref="paper", yref="paper", x=1, y=1.22, sizex=0.12, sizey=0.12, xanchor="right", yanchor="top")]
+        images=[dict(source=logo_data, xref="paper", yref="paper", x=1, y=1.18, sizex=0.15, sizey=0.15, xanchor="right", yanchor="top")]
     )
     
-    # --- RANGO DE TIEMPO (1M Y 10Y AGREGADOS) ---
+    # --- RANGOS 1M Y 10Y ---
     fig.update_xaxes(
         range=[first_valid_date, hoy_real], 
         showgrid=False, linecolor="#333", linewidth=2, tickfont=dict(color="#333", size=12), ticks="outside",
         rangeselector=dict(
             buttons=list([
-                dict(count=1, label="1M", step="month", stepmode="backward"), # 1 Mes
+                dict(count=1, label="1M", step="month", stepmode="backward"),
                 dict(count=6, label="6M", step="month", stepmode="backward"),
                 dict(count=1, label="1Y", step="year", stepmode="backward"), 
                 dict(count=5, label="5Y", step="year", stepmode="backward"),
-                dict(count=10, label="10Y", step="year", stepmode="backward"), # 10 Años
+                dict(count=10, label="10Y", step="year", stepmode="backward"),
                 dict(step="all", label="Max")
             ]),
             bgcolor="white", activecolor="#e6e6e6", x=0, y=1, xanchor='left', yanchor='bottom', font=dict(size=11, color="#333333") 
@@ -266,7 +243,7 @@ def create_pro_chart(df, col1, col2=None, invert_y2=False, logo_data="", config_
         if c in INDICATOR_CONFIG:
             src = INDICATOR_CONFIG[c]["src"]
             if src == "fred": return f"FRED {INDICATOR_CONFIG[c]['id']}"
-            if src == "bcch": return f"BCCh {INDICATOR_CONFIG[c]['id']}"
+            if src == "bcch": return f"BCCh {INDICATOR_CONFIG[c]['ids'][0]}"
         return custom_source_label
 
     lbl1 = get_source_label(col1)
@@ -319,7 +296,13 @@ with st.sidebar:
         bcch_user = st.text_input("Usuario:", help="Rut/Correo")
         bcch_pass = st.text_input("Password:", type="password")
 
-    # 3. ANALISTA IA
+    # 3. DATO MANUAL
+    st.divider()
+    with st.expander("✍️ Dato Manual (Dólar Hoy)", expanded=True):
+        st.caption("Si el BCCh no actualiza, ingresa el precio aquí:")
+        manual_usd = st.number_input("Precio Cierre Hoy:", min_value=0.0, value=0.0, step=0.1, format="%.2f", help="Deja en 0 para usar dato automático.")
+
+    # 4. ANALISTA IA
     with st.expander("🤖 Analista IA", expanded=False):
         gemini_key = st.text_input("Gemini Key:", type="password")
         system_prompt = st.text_area("Rol:", value="Eres un estratega macro senior de XTB. Sé breve y directo.", height=100)
@@ -359,7 +342,6 @@ if user_cols_list:
             if new_n != col: df_full = df_full.rename(columns={col: new_n})
 
 # --- CONFIGURACION GRAFICO ---
-# LISTA DE OPCIONES FORZADA
 all_opts = sorted(list(set(list(INDICATOR_CONFIG.keys()) + list(df_full.columns))))
 
 with st.sidebar:
@@ -412,6 +394,81 @@ if not df_full.empty and y1_sel != "Sin Datos":
     is_excel = y1_sel not in INDICATOR_CONFIG
     is_macro = (meta.get("type") == "macro") or is_excel
     
+    # --- CALCULADORA DE VARIACIONES (CON OVERRIDE MANUAL) ---
+    if "Dólar" in y1_sel and "CL Dólar Observado" in df_full.columns:
+        st.subheader("🧮 Calculadora de Variaciones: Dólar")
+        
+        # 1. Crear copia para trabajar
+        df_dollar_calc = df_full[["CL Dólar Observado"]].dropna().copy()
+        
+        # 2. APLICAR DATO MANUAL SI EXISTE
+        if manual_usd > 0:
+            today_date = pd.Timestamp.now().normalize()
+            df_dollar_calc.loc[today_date] = manual_usd
+            df_dollar_calc = df_dollar_calc.sort_index()
+        
+        # 3. Unir UF
+        if "CL UF" in df_full.columns:
+            df_uf = df_full[["CL UF"]].copy()
+            if manual_usd > 0:
+                last_uf = df_uf["CL UF"].dropna().iloc[-1]
+                today_date = pd.Timestamp.now().normalize()
+                if today_date not in df_uf.index:
+                    df_uf.loc[today_date] = last_uf
+            
+            df_dollar_calc = df_dollar_calc.join(df_uf, how='left').ffill()
+        
+        available_years = sorted(df_dollar_calc.index.year.unique().tolist(), reverse=True)
+        default_years = [y for y in [2025, 2017, 2009] if y in available_years]
+        if not default_years and available_years: default_years = [available_years[0]]
+        
+        target_years = st.multiselect("Selecciona los años a analizar:", options=available_years, default=default_years)
+        
+        if target_years:
+            stats = []
+            for yr in sorted(target_years, reverse=True):
+                yr_data = df_dollar_calc[df_dollar_calc.index.year == yr]
+                prev_yr_data = df_dollar_calc[df_dollar_calc.index.year == (yr - 1)]
+                
+                if not yr_data.empty:
+                    current_price = yr_data["CL Dólar Observado"].iloc[-1]
+                    ref_date = yr_data.index[-1].strftime('%d-%m-%Y')
+                    
+                    current_uf = yr_data["CL UF"].iloc[-1] if "CL UF" in yr_data.columns else None
+                    
+                    nom_var = "N/A"
+                    real_var = "N/A"
+                    var_clp = "N/A"
+                    
+                    if not prev_yr_data.empty:
+                        prev_price = prev_yr_data["CL Dólar Observado"].iloc[-1]
+                        prev_uf = prev_yr_data["CL UF"].iloc[-1] if "CL UF" in prev_yr_data.columns else None
+                        
+                        nom_pct = ((current_price - prev_price) / prev_price) * 100
+                        nom_var = f"{nom_pct:.2f}%"
+                        
+                        diff_price = current_price - prev_price
+                        sign = "+" if diff_price > 0 else ""
+                        var_clp = f"{sign}${diff_price:,.2f}"
+                        
+                        if current_uf and prev_uf:
+                            real_pct = (((current_price / current_uf) - (prev_price / prev_uf)) / (prev_price / prev_uf)) * 100
+                            real_var = f"{real_pct:.2f}%"
+                    
+                    stats.append({
+                        "Año": yr,
+                        "Fecha Ref.": ref_date,
+                        "Cierre Nominal": f"${current_price:,.2f}", # AQUI QUITAMOS EL TEXTO (Manual)
+                        "Var. $ (CLP)": var_clp,
+                        "Var. Nominal %": nom_var,
+                        "Var. Real (UF) %": real_var if "CL UF" in df_full.columns else "Requiere UF"
+                    })
+            
+            st.table(pd.DataFrame(stats).set_index("Año"))
+        else:
+            st.info("Selecciona al menos un año para ver el cálculo.")
+
+    # --- TABLA HISTÓRICA GENERAL ---
     if is_macro and y1_sel in df_full.columns:
         st.subheader(f"📅 Histórico: {y1_sel}")
         start_dt_table = pd.to_datetime("2020-01-01")
